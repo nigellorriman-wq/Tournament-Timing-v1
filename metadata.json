@@ -1,0 +1,10 @@
+{
+  "name": "Remix: Player Timing",
+  "description": "Precision timing and officiating tool for golf referees under the name \u0027Player Timing\u0027. Features lost ball countdowns, shot timers with leeway calculations, GPS location tracking, and session report exports.",
+  "requestFramePermissions": [
+    "geolocation",
+    "screen-wake-lock",
+    "wake-lock"
+  ],
+  "majorCapabilities": []
+}

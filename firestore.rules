@@ -1,0 +1,57 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Common helpers
+    function isSignedIn() {
+      return request.auth != null && request.auth.token.email_verified == true;
+    }
+    
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    // User profiles
+    match /users/{userId} {
+      match /public {
+        allow read: if isSignedIn();
+        allow write: if isSignedIn() && request.auth.uid == userId;
+      }
+      match /private/info {
+        allow read, write: if isSignedIn() && request.auth.uid == userId;
+      }
+    }
+
+    // Tournaments
+    match /tournaments/{tournamentId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && isValidTournament(request.resource.data);
+      allow update: if isSignedIn() && isValidTournament(request.resource.data);
+      
+      // Records subcollection
+      match /records/{recordId} {
+        allow read: if isSignedIn();
+        allow create: if isSignedIn() && isValidRecord(request.resource.data) && request.resource.data.officialId == request.auth.uid;
+        allow update: if isSignedIn() && request.auth.uid == resource.data.officialId && isValidRecord(request.resource.data);
+        allow delete: if isSignedIn() && request.auth.uid == resource.data.officialId;
+      }
+    }
+
+    function isValidTournament(data) {
+      return data.name is string && data.name.size() > 0 && data.name.size() < 200
+        && data.round is string && data.round.size() > 0;
+    }
+
+    function isValidRecord(data) {
+      return data.type in ['LOST_BALL', 'SHOT_TIME', 'FLAG_IN']
+        && data.timestamp is number
+        && data.hole is string
+        && data.group is string
+        && data.officialId is string;
+    }
+  }
+}

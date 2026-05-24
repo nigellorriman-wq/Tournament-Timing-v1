@@ -1,0 +1,102 @@
+{
+  "entities": {
+    "Tournament": {
+      "title": "Tournament",
+      "description": "Details about the golf tournament and its schedule",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "round": { "type": "string" },
+        "paceOfPlay": {
+          "type": "array",
+          "items": { "$ref": "#/entities/HolePace" }
+        },
+        "groups": {
+          "type": "array",
+          "items": { "$ref": "#/entities/GroupData" }
+        },
+        "kmlData": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "createdBy": { "type": "string" }
+      },
+      "required": ["name", "round"]
+    },
+    "HolePace": {
+      "title": "Hole Pace",
+      "type": "object",
+      "properties": {
+        "hole": { "type": "number" },
+        "minutes": { "type": "number" }
+      }
+    },
+    "GroupData": {
+      "title": "Group Data",
+      "type": "object",
+      "properties": {
+        "groupNumber": { "type": "string" },
+        "startTime": { "type": "string" },
+        "startingTee": { "type": "number" },
+        "players": { "type": "array", "items": { "type": "string" } },
+        "holeTimes": { "type": "object" }
+      }
+    },
+    "PlayerShotRecord": {
+      "title": "Player Shot Record",
+      "description": "A specific timing record for a player or group",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "type": { "type": "string", "enum": ["LOST_BALL", "SHOT_TIME", "FLAG_IN"] },
+        "timestamp": { "type": "number" },
+        "hole": { "type": "string" },
+        "group": { "type": "string" },
+        "playerName": { "type": "string" },
+        "isFirstToPlay": { "type": "boolean" },
+        "timeTaken": { "type": "number" },
+        "limit": { "type": "number" },
+        "leeway": { "type": "number" },
+        "isSlow": { "type": "boolean" },
+        "latitude": { "type": "number" },
+        "longitude": { "type": "number" },
+        "actualTime": { "type": "string" },
+        "targetTime": { "type": "string" },
+        "officialId": { "type": "string" },
+        "officialName": { "type": "string" }
+      },
+      "required": ["type", "timestamp", "hole", "group"]
+    },
+    "UserPublic": {
+      "title": "User Public Profile",
+      "type": "object",
+      "properties": {
+        "displayName": { "type": "string" },
+        "photoURL": { "type": "string" }
+      }
+    },
+    "UserPrivate": {
+      "title": "User Private Data",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string" }
+      }
+    }
+  },
+  "firestore": {
+    "/tournaments/{tournamentId}": {
+      "schema": "Tournament",
+      "description": "Active tournaments shared among officials"
+    },
+    "/tournaments/{tournamentId}/records/{recordId}": {
+      "schema": "PlayerShotRecord",
+      "description": "Timing records captured for a specific tournament"
+    },
+    "/users/{userId}/public": {
+      "schema": "UserPublic",
+      "description": "Public profile info"
+    },
+    "/users/{userId}/private/info": {
+      "schema": "UserPrivate",
+      "description": "Private PII data"
+    }
+  }
+}
