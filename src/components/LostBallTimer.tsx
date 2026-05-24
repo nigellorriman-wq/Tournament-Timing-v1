@@ -12,6 +12,7 @@ interface LostBallTimerProps {
   group: string;
   setGroup: (group: string) => void;
   currentTime?: Date;
+  updateActiveTimer?: (timer: any) => void;
 }
 
 export default function LostBallTimer({ 
@@ -21,7 +22,8 @@ export default function LostBallTimer({
   setHole,
   group,
   setGroup,
-  currentTime
+  currentTime,
+  updateActiveTimer
 }: LostBallTimerProps) {
   const [selectedPlayer, setSelectedPlayer] = useState<number | null>(null);
   const [location, setLocation] = useState<{ lat: number; lon: number } | null>(null);
@@ -63,6 +65,34 @@ export default function LostBallTimer({
     setSelectedPlayer(null);
   }, [group]);
 
+  const syncWithFirestore = (overrideIsActive?: boolean, overrideTimeLeft?: number, isClearing = false) => {
+    if (!updateActiveTimer) return;
+    if (isClearing) {
+      updateActiveTimer(null);
+      return;
+    }
+    const act = overrideIsActive !== undefined ? overrideIsActive : isActive;
+    const tl = overrideTimeLeft !== undefined ? overrideTimeLeft : timeLeft;
+    
+    updateActiveTimer({
+      type: TimerType.LOST_BALL,
+      hole,
+      group,
+      playerName: selectedPlayer !== null ? players[selectedPlayer] : 'Unknown Player',
+      isActive: act,
+      timeLeft: tl,
+      limit: 180,
+      status: act ? 'running' : (tl < 180 ? 'paused' : 'idle'),
+      timestamp: Date.now()
+    });
+  };
+
+  useEffect(() => {
+    if (isActive || (timeLeft < 180 && timeLeft > 0)) {
+      syncWithFirestore();
+    }
+  }, [hole, group, selectedPlayer]);
+
   useEffect(() => {
     if (isActive && timeLeft > 0) {
       timerRef.current = setInterval(() => {
@@ -72,6 +102,9 @@ export default function LostBallTimer({
       setIsActive(false);
       if (timerRef.current) clearInterval(timerRef.current);
       saveSearchRecord();
+      if (updateActiveTimer) {
+        updateActiveTimer(null); // Clear active timer once completed
+      }
     } else {
       if (timerRef.current) clearInterval(timerRef.current);
     }
@@ -99,13 +132,18 @@ export default function LostBallTimer({
     if (!isActive && timeLeft === 180) {
       captureLocation();
     }
-    setIsActive(!isActive);
+    const nextActive = !isActive;
+    setIsActive(nextActive);
+    syncWithFirestore(nextActive, timeLeft);
   };
 
   const resetTimer = () => {
     setIsActive(false);
     setTimeLeft(180);
     setLocation(null);
+    if (updateActiveTimer) {
+      updateActiveTimer(null);
+    }
   };
 
   const handleStop = () => {

@@ -39,6 +39,12 @@ service cloud.firestore {
         allow update: if isSignedIn() && request.auth.uid == resource.data.officialId && isValidRecord(request.resource.data);
         allow delete: if isSignedIn() && request.auth.uid == resource.data.officialId;
       }
+
+      // Officials Locations subcollection
+      match /officials_locations/{officialId} {
+        allow read: if isSignedIn();
+        allow create, update: if isSignedIn() && isValidId(officialId) && isValidOfficialLocation(request.resource.data);
+      }
     }
 
     function isValidTournament(data) {
@@ -52,6 +58,13 @@ service cloud.firestore {
         && data.hole is string
         && data.group is string
         && data.officialId is string;
+    }
+
+    function isValidOfficialLocation(data) {
+      return data.initials is string && data.initials.size() == 2
+        && data.lat is number
+        && data.lng is number
+        && data.timestamp is number;
     }
   }
 }

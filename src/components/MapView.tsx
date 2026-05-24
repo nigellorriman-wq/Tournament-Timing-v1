@@ -19,6 +19,7 @@ interface MapViewProps {
   tournamentInfo: TournamentInfo | undefined;
   records: PlayerShotRecord[];
   currentTime?: Date;
+  officialsLocations?: any[];
 }
 
 interface HoleLayout {
@@ -36,7 +37,7 @@ interface GroupPosition {
   paceStatus: 'Ahead' | 'On Time' | 'Behind';
 }
 
-export default function MapView({ tournamentInfo, records, currentTime }: MapViewProps) {
+export default function MapView({ tournamentInfo, records, currentTime, officialsLocations }: MapViewProps) {
   const [holeLayouts, setHoleLayouts] = useState<HoleLayout[]>([]);
   const [center, setCenter] = useState<[number, number]>([0, 0]);
   const [zoom, setZoom] = useState(13);
@@ -141,6 +142,54 @@ export default function MapView({ tournamentInfo, records, currentTime }: MapVie
 
     return finished.sort((a, b) => b.completionTime.getTime() - a.completionTime.getTime()).slice(0, 10);
   }, [tournamentInfo, records, minuteNow]);
+
+  const activeOfficialsLocations = useMemo(() => {
+    const hasSandboxTime = tournamentInfo?.timeOffset !== undefined && tournamentInfo?.timeOffset !== 0;
+    if (!hasSandboxTime || !tournamentInfo?.officials || tournamentInfo.officials.length === 0 || holeLayouts.length === 0) {
+      return officialsLocations || [];
+    }
+
+    const mockOfficials: any[] = [];
+    const shuffledHoles = [...holeLayouts];
+    
+    // Deterministic seeded shuffle using tournament name
+    let seed = 42;
+    for (let i = shuffledHoles.length - 1; i > 0; i--) {
+      const nameSum = (tournamentInfo.name || '').split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+      const x = Math.sin(seed++ + nameSum) * 10000;
+      const r = x - Math.floor(x);
+      const j = Math.floor(r * (i + 1));
+      const temp = shuffledHoles[i];
+      shuffledHoles[i] = shuffledHoles[j];
+      shuffledHoles[j] = temp;
+    }
+
+    tournamentInfo.officials.forEach((official, idx) => {
+      const layout = shuffledHoles[idx % shuffledHoles.length];
+      if (layout && layout.coordinates.length > 0) {
+        const greenCoord = layout.coordinates[layout.coordinates.length - 1]; // Green is the end of the hole layout
+        
+        // Offset of 15-30 meters (0.00012 to 0.00026 degrees) beside the green
+        const nameSum2 = (official.initials || '').split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) + idx;
+        const latOffset = (Math.sin(nameSum2) * 1.5 + 1.5) * 0.00012 + 0.00008;
+        const lngOffset = (Math.cos(nameSum2) * 1.5 + 1.5) * 0.00012 + 0.00008;
+
+        const matchingRealLoc = (officialsLocations || []).find(
+          l => l.initials?.toUpperCase() === official.initials?.toUpperCase()
+        );
+
+        mockOfficials.push({
+          initials: official.initials.toUpperCase().slice(0, 2),
+          lat: greenCoord[0] + (nameSum2 % 2 === 0 ? latOffset : -latOffset),
+          lng: greenCoord[1] + (nameSum2 % 3 === 0 ? lngOffset : -lngOffset),
+          timestamp: Date.now(),
+          activeTimer: matchingRealLoc?.activeTimer || null
+        });
+      }
+    });
+
+    return mockOfficials;
+  }, [tournamentInfo, holeLayouts, officialsLocations]);
 
   const groupPositions = useMemo(() => {
     if (!tournamentInfo) return [];
@@ -339,11 +388,11 @@ export default function MapView({ tournamentInfo, records, currentTime }: MapVie
         </div>
         <div className="flex gap-4">
            <div className="flex items-center gap-1.5">
-             <div className="w-2 h-2 rounded-full bg-[#FFDD00]"></div>
+             <div className="w-2 h-2 rounded-full bg-zinc-400"></div>
              <span className="text-[9px] font-bold uppercase text-zinc-400">Confirmed</span>
            </div>
            <div className="flex items-center gap-1.5">
-             <div className="w-2 h-2 rounded-full border border-[#FFDD00]"></div>
+             <div className="w-2 h-2 rounded-full border border-zinc-400"></div>
              <span className="text-[9px] font-bold uppercase text-zinc-400">Estimated</span>
            </div>
         </div>
@@ -357,8 +406,8 @@ export default function MapView({ tournamentInfo, records, currentTime }: MapVie
             <div className="space-y-1">
               {nextGroups.map(g => (
                 <div key={g.groupNumber} className="flex items-center justify-between gap-2 px-1 py-1 border-b border-zinc-800 last:border-0">
-                  <span className="text-[10px] font-black">G{g.groupNumber}</span>
-                  <span className="text-[10px] font-mono text-zinc-400">{g.startTime}</span>
+                  <span className="text-[10px] font-black text-white">G{g.groupNumber}</span>
+                  <span className="text-[10px] font-mono text-white">{g.startTime}</span>
                 </div>
               ))}
             </div>
@@ -376,12 +425,12 @@ export default function MapView({ tournamentInfo, records, currentTime }: MapVie
                 return (
                   <div key={g.groupNumber} className="flex flex-col gap-0.5 px-1 py-1 border-b border-zinc-800 last:border-0">
                     <div className="flex items-center justify-between">
-                      <span className="text-[10px] font-black">G{g.groupNumber} <span className="text-[8px] text-zinc-500 font-bold uppercase">{g.status === 'estimated' ? 'Est' : 'Act'}</span></span>
+                      <span className="text-[10px] font-black text-white">G{g.groupNumber} <span className="text-[8px] text-white font-bold uppercase">{g.status === 'estimated' ? 'Est' : 'Act'}</span></span>
                       <span className="text-[10px] font-mono text-[#FFDD00]">
                         {g.completionTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })}
                       </span>
                     </div>
-                    <div className="text-[8px] font-bold text-zinc-500 uppercase flex justify-between">
+                    <div className="text-[8px] font-bold text-white uppercase flex justify-between">
                       <span>Time Taken</span>
                       <span>{h}h {m}m</span>
                     </div>
@@ -438,7 +487,7 @@ export default function MapView({ tournamentInfo, records, currentTime }: MapVie
               position={[pos.lat, pos.lng]}
               icon={L.divIcon({
                 html: `
-                  <div class="group-marker ${pos.estimated ? 'estimated' : ''} ${pos.paceStatus === 'Behind' ? 'behind' : ''} ${pos.paceStatus === 'Ahead' ? 'ahead' : ''}">
+                  <div class="group-marker ${pos.estimated ? 'estimated' : ''} ${pos.paceStatus === 'Behind' ? 'behind' : ''} ${pos.paceStatus === 'Ahead' ? 'ahead' : ''} ${pos.paceStatus === 'On Time' ? 'ontime' : ''}">
                     <span class="label">${pos.groupNumber}</span>
                   </div>
                 `,
@@ -485,17 +534,130 @@ export default function MapView({ tournamentInfo, records, currentTime }: MapVie
               </Popup>
             </Marker>
           ))}
+
+          {/* Render rules officials */}
+          {activeOfficialsLocations.map((off, idx) => {
+            // Filter out positions updated more than 1 hour ago
+            const isRecent = Date.now() - off.timestamp < 3600000;
+            if (!isRecent) return null;
+
+            const hasActiveTimer = off.activeTimer && off.activeTimer !== null;
+            const pulseClass = hasActiveTimer ? 'pulse-timer' : '';
+
+            return (
+              <Marker
+                key={`official-${off.initials}-${idx}`}
+                position={[off.lat, off.lng]}
+                icon={L.divIcon({
+                  html: `<div class="official-marker-box ${pulseClass}">${off.initials.trim().toUpperCase().slice(0, 2)}</div>`,
+                  className: '',
+                  iconSize: [26, 26],
+                  iconAnchor: [13, 13]
+                })}
+              >
+                <Popup>
+                  <div className="text-black font-bold text-xs p-1 min-w-[180px]">
+                    <p className="font-black border-b border-zinc-200 pb-1 mb-1.5 flex items-center justify-between text-zinc-950">
+                      <span>Rules Official: {off.initials}</span>
+                      {hasActiveTimer && (
+                        <span className="animate-pulse bg-red-600 text-white text-[8px] px-1.5 py-0.5 rounded font-black tracking-widest uppercase">
+                          ACTIVE
+                        </span>
+                      )}
+                    </p>
+                    {hasActiveTimer ? (
+                      <div className="space-y-1.5 text-zinc-800">
+                        <div className="flex items-center justify-between text-[10px] text-zinc-500 font-extrabold uppercase">
+                          <span>TIMER TYPE</span>
+                          <span className="text-red-600">
+                            {off.activeTimer.type === 'LOST_BALL' ? 'LOST BALL' : 'SHOT CLOCK'}
+                          </span>
+                        </div>
+                        <p className="text-xs font-black text-zinc-900 mt-1">
+                          {off.activeTimer.playerName}
+                        </p>
+                        <div className="grid grid-cols-2 gap-2 text-[10px] bg-zinc-100 p-1.5 rounded border border-zinc-200 mt-1 tabular-nums font-mono text-zinc-600">
+                          <div>
+                            <span className="block text-[8px] text-zinc-400 font-bold uppercase">Hole</span>
+                            <span className="font-bold text-zinc-900">Hole {off.activeTimer.hole}</span>
+                          </div>
+                          <div>
+                            <span className="block text-[8px] text-zinc-400 font-bold uppercase">Group</span>
+                            <span className="font-bold text-zinc-900">Group {off.activeTimer.group}</span>
+                          </div>
+                        </div>
+                        
+                        {off.activeTimer.type === 'LOST_BALL' ? (
+                          <div className="mt-2 text-center text-red-600 font-mono text-xs font-black border-t border-dashed border-zinc-200 pt-1.5">
+                            Search Code: Rule 18.2a {off.activeTimer.timeLeft !== undefined ? `(${Math.floor(off.activeTimer.timeLeft / 60)}:${(off.activeTimer.timeLeft % 60).toString().padStart(2, '0')} left)` : ''}
+                          </div>
+                        ) : (
+                          <div className="mt-2 text-center text-amber-600 font-mono text-xs font-black border-t border-dashed border-zinc-200 pt-1.5">
+                            Pace Limit: {off.activeTimer.limit}s {off.activeTimer.timeTaken !== undefined ? `(${off.activeTimer.timeTaken.toFixed(1)}s elapsed)` : ''}
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="text-zinc-500 text-[10px] py-1">
+                        No active timers currently running.
+                      </div>
+                    )}
+                    
+                    <p className="text-[8px] text-zinc-400 mt-2 text-right border-t border-zinc-100 pt-1">
+                      Last update: {new Date(off.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </p>
+                  </div>
+                </Popup>
+              </Marker>
+            );
+          })}
           
           <MapController center={center} zoom={zoom} />
         </MapContainer>
       </div>
 
       <style>{`
+        @keyframes pulse-yellow {
+          0% {
+            box-shadow: 0 0 0 0 rgba(255, 221, 0, 0.9), 0 4px 12px rgba(0,0,0,0.6);
+            border-color: #FFDD00;
+          }
+          70% {
+            box-shadow: 0 0 0 14px rgba(255, 221, 0, 0), 0 4px 12px rgba(0,0,0,0.6);
+            border-color: #FFDD00;
+          }
+          100% {
+            box-shadow: 0 0 0 0 rgba(255, 221, 0, 0), 0 4px 12px rgba(0,0,0,0.6);
+            border-color: #FFDD00;
+          }
+        }
+        .official-marker-box {
+          width: 26px;
+          height: 26px;
+          background: #000000;
+          border: 2px solid #FFFFFF;
+          color: #FFFFFF;
+          border-radius: 0px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-family: monospace;
+          font-weight: 900;
+          font-size: 11px;
+          text-align: center;
+          box-shadow: 0 4px 12px rgba(0,0,0,0.6);
+          transition: all 0.3s;
+        }
+        .official-marker-box.pulse-timer {
+          animation: pulse-yellow 1.5s infinite;
+          background: #251212;
+          border-color: #FFDD00;
+        }
         .group-marker {
           width: 32px;
           height: 32px;
-          background: #FFDD00;
-          color: black;
+          background: #22C55E;
+          color: white;
           border-radius: 50%;
           display: flex;
           align-items: center;
@@ -506,16 +668,37 @@ export default function MapView({ tournamentInfo, records, currentTime }: MapVie
           box-shadow: 0 4px 12px rgba(0,0,0,0.5);
           transition: all 0.3s;
         }
-        .group-marker.estimated {
-          background: rgba(0,0,0,0.8);
-          color: #FFDD00;
-          border: 3px solid #FFDD00;
+        .group-marker.ontime {
+          background: #22C55E;
+          color: white;
+          border-color: black;
         }
         .group-marker.behind {
-          box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.4);
+          background: #EF4444;
+          color: white;
+          border-color: black;
         }
         .group-marker.ahead {
-          box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.4);
+          background: #3B82F6;
+          color: white;
+          border-color: black;
+        }
+        .group-marker.estimated {
+          background: rgba(0,0,0,0.8);
+          color: #22C55E;
+          border: 3px solid #22C55E;
+        }
+        .group-marker.estimated.ontime {
+          color: #22C55E;
+          border-color: #22C55E;
+        }
+        .group-marker.estimated.behind {
+          color: #EF4444;
+          border-color: #EF4444;
+        }
+        .group-marker.estimated.ahead {
+          color: #3B82F6;
+          border-color: #3B82F6;
         }
         .group-marker .label {
           font-family: sans-serif;
@@ -529,13 +712,13 @@ export default function MapView({ tournamentInfo, records, currentTime }: MapVie
           filter: saturate(1.2) contrast(1.1);
         }
         .subtle-hole-label {
-          color: rgba(255, 221, 0, 0.45);
+          color: #FFFFFF;
           font-family: monospace;
-          font-size: 10px;
-          font-weight: 700;
+          font-size: 11px;
+          font-weight: 900;
           text-align: center;
           line-height: 24px;
-          text-shadow: 0 0 2px rgba(0, 0, 0, 0.8);
+          text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000, 0 1px 3px rgba(0, 0, 0, 0.9);
           pointer-events: none;
         }
       `}</style>

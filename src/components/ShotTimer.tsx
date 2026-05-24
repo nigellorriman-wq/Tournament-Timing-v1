@@ -13,6 +13,7 @@ interface ShotTimerProps {
   group: string;
   setGroup: (group: string) => void;
   currentTime?: Date;
+  updateActiveTimer?: (timer: any) => void;
 }
 
 export default function ShotTimer({ 
@@ -23,7 +24,8 @@ export default function ShotTimer({
   setHole,
   group,
   setGroup,
-  currentTime
+  currentTime,
+  updateActiveTimer
 }: ShotTimerProps) {
   const [selectedPlayer, setSelectedPlayer] = useState<number | null>(null);
   const [isFirstToPlay, setIsFirstToPlay] = useState(false);
@@ -93,6 +95,36 @@ export default function ShotTimer({
     return () => clearInterval(interval);
   }, [status]);
 
+  const syncWithFirestore = (overrideStatus?: string, overrideTimer?: number, isClearing = false) => {
+    if (!updateActiveTimer) return;
+    if (isClearing) {
+      updateActiveTimer(null);
+      return;
+    }
+    const currentStatus = overrideStatus || status;
+    const currentTimer = overrideTimer !== undefined ? overrideTimer : timer;
+    
+    if (currentStatus === 'countdown' || currentStatus === 'running' || currentStatus === 'paused') {
+      updateActiveTimer({
+        type: TimerType.SHOT_TIME,
+        hole,
+        group,
+        playerName: selectedPlayer !== null ? players[selectedPlayer] : 'Unknown Player',
+        isActive: currentStatus === 'running',
+        timeTaken: currentTimer,
+        limit: isFirstToPlay ? 50 : 40,
+        status: currentStatus,
+        timestamp: Date.now() - (currentStatus === 'running' ? currentTimer * 1000 : 0)
+      });
+    } else {
+      updateActiveTimer(null);
+    }
+  };
+
+  useEffect(() => {
+    syncWithFirestore();
+  }, [status, hole, group, selectedPlayer, isFirstToPlay]);
+
   const handleStart = () => {
     if (selectedPlayer === null) return;
     setTimer(0);
@@ -101,19 +133,30 @@ export default function ShotTimer({
   };
 
   const handleTogglePause = () => {
-    if (status === 'running') setStatus('paused');
-    else if (status === 'paused') setStatus('running');
+    if (status === 'running') {
+      setStatus('paused');
+      syncWithFirestore('paused', timer);
+    } else if (status === 'paused') {
+      setStatus('running');
+      syncWithFirestore('running', timer);
+    }
   };
 
   const handleReset = () => {
     setStatus('idle');
     setTimer(0);
     setCountdown(3);
+    if (updateActiveTimer) {
+      updateActiveTimer(null);
+    }
   };
 
   const handleStop = () => {
     if (status !== 'running' && status !== 'paused') return;
     setStatus('finished');
+    if (updateActiveTimer) {
+      updateActiveTimer(null);
+    }
     
     // Get location and save record
     const limit = isFirstToPlay ? 50 : 40;

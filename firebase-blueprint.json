@@ -79,16 +79,32 @@
       "properties": {
         "email": { "type": "string" }
       }
+    },
+    "OfficialLocation": {
+      "title": "Official Location",
+      "description": "Real-time geographical position of a rules official",
+      "type": "object",
+      "properties": {
+        "initials": { "type": "string" },
+        "lat": { "type": "number" },
+        "lng": { "type": "number" },
+        "timestamp": { "type": "number" }
+      },
+      "required": ["initials", "lat", "lng", "timestamp"]
     }
   },
   "firestore": {
     "/tournaments/{tournamentId}": {
       "schema": "Tournament",
-      "description": "Active tournaments shared among officials"
+      "description": "Details about the golf tournament and its schedule"
     },
     "/tournaments/{tournamentId}/records/{recordId}": {
       "schema": "PlayerShotRecord",
       "description": "Timing records captured for a specific tournament"
+    },
+    "/tournaments/{tournamentId}/officials_locations/{officialId}": {
+      "schema": "OfficialLocation",
+      "description": "Real-time coordinate tracking of rules officials"
     },
     "/users/{userId}/public": {
       "schema": "UserPublic",

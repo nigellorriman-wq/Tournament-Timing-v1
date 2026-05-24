@@ -24,6 +24,11 @@ export default function App() {
   const [tournament, setTournament] = useState<TournamentInfo | undefined>(undefined);
   const [tournamentId, setTournamentId] = useState<string | null>(() => localStorage.getItem('golf-active-tournament-id'));
 
+  const [officialsLocations, setOfficialsLocations] = useState<any[]>([]);
+  const [officialInitials, setOfficialInitials] = useState(() => localStorage.getItem('golf-official-initials') || '');
+  const [tempInitials, setTempInitials] = useState('');
+  const [initialsError, setInitialsError] = useState('');
+
   // Admin Login States
   const [isAdminLoggedIn, setIsAdminLoggedIn] = useState(() => localStorage.getItem('golf-admin-logged-in') === 'true');
   const [adminUsername, setAdminUsername] = useState('');
@@ -105,11 +110,53 @@ export default function App() {
       handleFirestoreError(error, OperationType.LIST, `tournaments/${tournamentId}/records`);
     });
 
+    const locsRef = collection(db, 'tournaments', tournamentId, 'officials_locations');
+    const unsubLocs = onSnapshot(locsRef, (snapshot) => {
+      const locs = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setOfficialsLocations(locs);
+    }, (error) => {
+      console.error("Error loading officials locations:", error);
+    });
+
     return () => {
       unsubTourney();
       unsubRecords();
+      unsubLocs();
     };
   }, [user, tournamentId]);
+
+  // Realtime coordinates tracking of the current official
+  useEffect(() => {
+    if (!navigator.geolocation || !tournamentId || !officialInitials) return;
+
+    const watchId = navigator.geolocation.watchPosition(
+      (position) => {
+        const { latitude, longitude } = position.coords;
+        const officialRef = doc(db, 'tournaments', tournamentId, 'officials_locations', officialInitials);
+        setDoc(officialRef, {
+          initials: officialInitials.toUpperCase().slice(0, 2),
+          lat: latitude,
+          lng: longitude,
+          timestamp: Date.now()
+        }, { merge: true }).catch(err => {
+          console.error("Error setting official location:", err);
+        });
+      },
+      (error) => {
+        console.warn("Geolocation watch error:", error);
+      },
+      {
+        enableHighAccuracy: true,
+        maximumAge: 10000,
+        timeout: 10000
+      }
+    );
+
+    return () => navigator.geolocation.clearWatch(watchId);
+  }, [tournamentId, officialInitials]);
 
   // Request wake lock and lock orientation on interaction
   const handleInteraction = async () => {
@@ -146,6 +193,18 @@ export default function App() {
     }
   };
 
+  const updateActiveTimer = async (timer: any) => {
+    if (!user || !tournamentId || !officialInitials) return;
+    try {
+      const officialRef = doc(db, 'tournaments', tournamentId, 'officials_locations', officialInitials);
+      await setDoc(officialRef, {
+        activeTimer: timer || null
+      }, { merge: true });
+    } catch (err) {
+      console.error("Error setting active timer:", err);
+    }
+  };
+
   const clearHistory = async () => {
     if (!confirm('Are you sure you want to clear all records for this tournament? This will affect all officials.')) return;
 
@@ -167,6 +226,28 @@ export default function App() {
     }
   };
 
+  const cleanUndefined = <T,>(obj: T): T => {
+    if (obj === null || obj === undefined) {
+      return obj;
+    }
+    if (Array.isArray(obj)) {
+      return obj.map(item => cleanUndefined(item)) as unknown as T;
+    }
+    if (typeof obj === 'object') {
+      const cleaned: any = {};
+      for (const key in obj) {
+        if (Object.prototype.hasOwnProperty.call(obj, key)) {
+          const val = obj[key];
+          if (val !== undefined) {
+            cleaned[key] = cleanUndefined(val);
+          }
+        }
+      }
+      return cleaned as T;
+    }
+    return obj;
+  };
+
   const handleTournamentSetup = async (info: TournamentInfo) => {
     if (!user) return;
 
@@ -177,11 +258,12 @@ export default function App() {
 
     try {
       const tourneyRef = doc(db, 'tournaments', id);
-      await setDoc(tourneyRef, {
+      const cleanedData = cleanUndefined({
         ...info,
         createdBy: user.uid,
         createdAt: new Date().toISOString()
-      }, { merge: true });
+      });
+      await setDoc(tourneyRef, cleanedData, { merge: true });
       
       setTournament(info);
       setActiveTab('shot');
@@ -225,6 +307,85 @@ export default function App() {
     );
   }
 
+  if (user && !officialInitials) {
+    const tourneyOfficials = tournament?.officials || [];
+    const handleInitialsSubmit = (e: React.FormEvent) => {
+      e.preventDefault();
+      const cleaned = tempInitials.trim().toUpperCase();
+      if (cleaned.length !== 2 || !/^[A-Z]{2}$/.test(cleaned)) {
+        setInitialsError('Initials must be exactly 2 letters');
+        return;
+      }
+      
+      // If the setup lists configured officials, check if it matches one of them
+      if (tourneyOfficials.length > 0 && !tourneyOfficials.some(o => o.initials === cleaned)) {
+        setInitialsError(`"${cleaned}" is not registered. Please use one of: ${tourneyOfficials.map(o => o.initials).join(', ')}`);
+        return;
+      }
+
+      setOfficialInitials(cleaned);
+      localStorage.setItem('golf-official-initials', cleaned);
+    };
+
+    return (
+      <div className="fixed inset-0 bg-black text-white flex flex-col items-center justify-center p-6 text-center font-sans z-50">
+        <div className="w-20 h-20 bg-black text-white border-2 border-white rounded-3xl flex items-center justify-center mb-6 shadow-2xl font-mono text-3xl font-black">
+          {tempInitials.toUpperCase().padEnd(2, '_')}
+        </div>
+        <h1 className="text-3xl font-black italic tracking-tighter uppercase mb-2">Ref Initials</h1>
+        <p className="text-zinc-500 text-xs max-w-[280px] mb-8 font-medium leading-relaxed">
+          Please enter your 2-character initials to link your device and map position.
+        </p>
+
+        <form onSubmit={handleInitialsSubmit} className="w-full max-w-xs space-y-4">
+          <div>
+            <input 
+              type="text"
+              maxLength={2}
+              value={tempInitials}
+              onChange={(e) => {
+                setTempInitials(e.target.value.toUpperCase().replace(/[^A-Za-z]/g, ''));
+                setInitialsError('');
+              }}
+              className="w-full bg-zinc-950 border border-zinc-805 border-zinc-800 rounded-xl px-4 py-3.5 text-center text-xl font-mono tracking-widest font-black focus:border-[#FFDD00] outline-none"
+              placeholder="XX"
+              autoFocus
+            />
+            {initialsError && (
+              <p className="text-red-500 text-[10px] uppercase font-bold mt-2 leading-relaxed">{initialsError}</p>
+            )}
+          </div>
+          <button 
+            type="submit"
+            className="w-full bg-[#FFDD00] text-black font-black uppercase tracking-tighter py-4 rounded-xl hover:bg-[#ffe533] transition-all transform active:scale-95"
+          >
+            Access Timing App
+          </button>
+        </form>
+
+        {tourneyOfficials.length > 0 && (
+          <div className="mt-8 max-w-xs">
+            <p className="text-[10px] text-zinc-500 uppercase font-bold tracking-wider mb-2">Registered Officials</p>
+            <div className="flex flex-wrap justify-center gap-1.5">
+              {tourneyOfficials.map((o, idx) => (
+                <button
+                  key={idx}
+                  onClick={() => {
+                    setTempInitials(o.initials);
+                    setInitialsError('');
+                  }}
+                  className="px-2 py-1 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 rounded text-[10px] font-mono font-bold text-gray-300 transition-colors"
+                >
+                  {o.initials} {o.name ? `(${o.name})` : ''}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div 
       className="fixed inset-0 flex flex-col bg-black text-white font-sans selection:bg-[#FFDD00] selection:text-black"
@@ -252,6 +413,21 @@ export default function App() {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {officialInitials && (
+            <button
+              onClick={() => {
+                if (confirm('Are you sure you want to change your Rules Official initials?')) {
+                  localStorage.removeItem('golf-official-initials');
+                  setOfficialInitials('');
+                  setTempInitials('');
+                }
+              }}
+              className="px-1.5 py-0.5 text-[10px] tracking-wider font-mono font-black bg-black border border-white text-white rounded cursor-pointer shrink-0"
+              title="Click to change initials"
+            >
+              REF {officialInitials}
+            </button>
+          )}
           <button 
             onClick={() => signOut(auth)}
             className="p-2 rounded-full hover:bg-zinc-800 text-zinc-500 transition-colors"
@@ -284,6 +460,7 @@ export default function App() {
               group={activeGroup}
               setGroup={setActiveGroup}
               currentTime={currentTime}
+              updateActiveTimer={updateActiveTimer}
             />
           )}
           {activeTab === 'shot' && (
@@ -296,6 +473,7 @@ export default function App() {
               group={activeGroup}
               setGroup={setActiveGroup}
               currentTime={currentTime}
+              updateActiveTimer={updateActiveTimer}
             />
           )}
           {activeTab === 'history' && (
@@ -389,6 +567,7 @@ export default function App() {
               tournamentInfo={tournament}
               records={records}
               currentTime={currentTime}
+              officialsLocations={officialsLocations}
             />
           )}
         </div>

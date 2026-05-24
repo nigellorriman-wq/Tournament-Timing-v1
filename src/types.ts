@@ -35,6 +35,11 @@ export interface GroupData {
   holeTimes?: Record<string, string>; // Map of hole number to target time string "HH:MM"
 }
 
+export interface OfficialData {
+  initials: string;
+  name?: string;
+}
+
 export interface TournamentInfo {
   name: string;
   round: string;
@@ -42,6 +47,7 @@ export interface TournamentInfo {
   groups: GroupData[];
   kmlData?: string;
   timeOffset?: number;
+  officials?: OfficialData[];
 }
 
 export interface SessionData {

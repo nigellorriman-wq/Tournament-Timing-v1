@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import Papa from 'papaparse';
-import { Upload, X, Check, FileText, Trophy, Calendar, FileType, Sparkles, Loader2, Map as MapIcon, Clock } from 'lucide-react';
-import { TournamentInfo, HolePace, GroupData } from '../types';
+import { Upload, X, Check, FileText, Trophy, Calendar, FileType, Sparkles, Loader2, Map as MapIcon, Clock, User } from 'lucide-react';
+import { TournamentInfo, HolePace, GroupData, OfficialData } from '../types';
 import { GoogleGenAI, Type } from "@google/genai";
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
@@ -19,6 +19,23 @@ export const TournamentSetup: React.FC<TournamentSetupProps> = ({ onSetupComplet
   const [kmlData, setKmlData] = useState<string>(currentInfo?.kmlData || '');
   const [sandboxTime, setSandboxTime] = useState('');
   const [isParsing, setIsParsing] = useState(false);
+
+  const [officials, setOfficials] = useState<OfficialData[]>(currentInfo?.officials || []);
+  const [newOfficialInitials, setNewOfficialInitials] = useState('');
+  const [newOfficialName, setNewOfficialName] = useState('');
+
+  const handleAddOfficial = () => {
+    const initials = newOfficialInitials.trim().toUpperCase();
+    if (initials.length !== 2) return;
+    if (officials.some(o => o.initials === initials)) return;
+    setOfficials([...officials, { initials, name: newOfficialName.trim() || undefined }]);
+    setNewOfficialInitials('');
+    setNewOfficialName('');
+  };
+
+  const handleRemoveOfficial = (initials: string) => {
+    setOfficials(officials.filter(o => o.initials !== initials));
+  };
 
   const normalizeTime = (timeStr: string): string => {
     if (!timeStr) return "00:00";
@@ -228,14 +245,14 @@ export const TournamentSetup: React.FC<TournamentSetupProps> = ({ onSetupComplet
         <h2 className="text-xl font-bold flex items-center gap-2 text-[#FFDD00]">
           <Trophy size={20} /> Tournament Setup
         </h2>
-        <p className="text-gray-500 text-xs mt-1">Import pace of play and starting draw records.</p>
+        <p className="text-white text-xs mt-1">Import pace of play and starting draw records.</p>
       </div>
 
       <div className="space-y-4">
         {/* Basic Info */}
         <div className="grid grid-cols-2 gap-3">
           <div className="bg-zinc-900/50 p-3 rounded-lg border border-zinc-800 focus-within:border-[#FFDD00] transition-colors">
-            <label className="text-[10px] text-gray-500 uppercase font-black mb-1 block">Tournament Name</label>
+            <label className="text-[10px] text-white uppercase font-black mb-1 block">Tournament Name</label>
             <input 
               value={name}
               onChange={(e) => setName(e.target.value)}
@@ -244,7 +261,7 @@ export const TournamentSetup: React.FC<TournamentSetupProps> = ({ onSetupComplet
             />
           </div>
           <div className="bg-zinc-900/50 p-3 rounded-lg border border-zinc-800 focus-within:border-[#FFDD00] transition-colors">
-            <label className="text-[10px] text-gray-500 uppercase font-black mb-1 block">Round Number</label>
+            <label className="text-[10px] text-white uppercase font-black mb-1 block">Round Number</label>
             <input 
               value={round}
               onChange={(e) => setRound(e.target.value)}
@@ -262,7 +279,7 @@ export const TournamentSetup: React.FC<TournamentSetupProps> = ({ onSetupComplet
             </label>
             {groups.length > 0 && paceData.length > 0 && <Check size={14} className="text-green-500" />}
           </div>
-          <p className="text-[10px] text-gray-500 mb-3">Upload a full start list PDF. Gemini will extract all info automatically.</p>
+          <p className="text-[10px] text-white mb-3">Upload a full start list PDF. Gemini will extract all info automatically.</p>
           <label className={`flex items-center gap-2 px-4 py-2 bg-[#FFDD00] hover:bg-[#ffe533] transition-colors rounded text-[10px] font-black text-black cursor-pointer w-fit ${isParsing ? 'opacity-50 cursor-not-allowed' : ''}`}>
             {isParsing ? <Loader2 size={12} className="animate-spin" /> : <FileType size={12} />}
             {isParsing ? 'Analyzing Document...' : 'Import from PDF'}
@@ -285,7 +302,7 @@ export const TournamentSetup: React.FC<TournamentSetupProps> = ({ onSetupComplet
               </label>
               {paceData.length > 0 && <Check size={14} className="text-green-500" />}
             </div>
-            <p className="text-[10px] text-gray-500 mb-3">Required: Hole, Minutes</p>
+            <p className="text-[10px] text-white mb-3">Required: Hole, Minutes</p>
             <label className="flex items-center gap-2 px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 transition-colors rounded text-[10px] font-bold cursor-pointer w-fit">
               <Upload size={12} /> {paceData.length > 0 ? 'Change File' : 'Upload CSV'}
               <input type="file" accept=".csv" onChange={handlePaceUpload} className="hidden" />
@@ -300,7 +317,7 @@ export const TournamentSetup: React.FC<TournamentSetupProps> = ({ onSetupComplet
               </label>
               {groups.length > 0 && <Check size={14} className="text-green-500" />}
             </div>
-            <p className="text-[10px] text-gray-500 mb-3">Required: Group, StartTime, Tee, Player1, Player2...</p>
+            <p className="text-[10px] text-white mb-3">Required: Group, StartTime, Tee, Player1, Player2...</p>
             <label className="flex items-center gap-2 px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 transition-colors rounded text-[10px] font-bold cursor-pointer w-fit">
               <Upload size={12} /> {groups.length > 0 ? 'Change File' : 'Upload CSV'}
               <input type="file" accept=".csv" onChange={handleGroupsUpload} className="hidden" />
@@ -315,7 +332,7 @@ export const TournamentSetup: React.FC<TournamentSetupProps> = ({ onSetupComplet
               </label>
               {kmlData && <Check size={14} className="text-green-500" />}
             </div>
-            <p className="text-[10px] text-gray-500 mb-3">Optional: Upload a KML file for GPS tracking and group mapping.</p>
+            <p className="text-[10px] text-white mb-3">Optional: Upload a KML file for GPS tracking and group mapping.</p>
             <label className="flex items-center gap-2 px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 transition-colors rounded text-[10px] font-bold cursor-pointer w-fit">
               <Upload size={12} /> {kmlData ? 'Change KML File' : 'Upload KML'}
               <input type="file" accept=".kml" onChange={handleKmlUpload} className="hidden" />
@@ -329,7 +346,7 @@ export const TournamentSetup: React.FC<TournamentSetupProps> = ({ onSetupComplet
                 <Clock size={14} className="text-[#FFDD00]" /> Sandbox Current Time
               </label>
             </div>
-            <p className="text-[10px] text-gray-500 mb-3">Testing only: Set a custom clock time for this tournament.</p>
+            <p className="text-[10px] text-white mb-3">Testing only: Set a custom clock time for this tournament.</p>
             <div className="flex items-center gap-3">
               <input 
                 type="time" 
@@ -346,6 +363,59 @@ export const TournamentSetup: React.FC<TournamentSetupProps> = ({ onSetupComplet
                 </button>
               )}
             </div>
+          </div>
+
+          <div className="p-4 rounded-xl border border-zinc-800 bg-zinc-900/30">
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-xs font-bold flex items-center gap-2">
+                <User size={14} className="text-[#FFDD00]" /> Registered Rules Officials
+              </label>
+            </div>
+            <p className="text-[10px] text-white mb-3">Add rules officials' 2-letter initials for course location mapping.</p>
+            <div className="flex gap-2 mb-3">
+              <input 
+                type="text"
+                maxLength={2}
+                placeholder="Initials"
+                value={newOfficialInitials}
+                onChange={(e) => setNewOfficialInitials(e.target.value.toUpperCase().replace(/[^A-Za-z]/g, ''))}
+                className="bg-black border border-zinc-800 rounded px-2.5 py-1.5 text-xs outline-none focus:border-[#FFDD00] w-20 uppercase font-mono tracking-widest text-center font-bold"
+              />
+              <input 
+                type="text"
+                placeholder="Full Name (optional)"
+                value={newOfficialName}
+                onChange={(e) => setNewOfficialName(e.target.value)}
+                className="bg-black border border-zinc-800 rounded px-2.5 py-1.5 text-xs outline-none focus:border-[#FFDD00] flex-1 min-w-0"
+              />
+              <button
+                type="button"
+                onClick={handleAddOfficial}
+                className="px-3 py-1.5 bg-[#FFDD00] hover:bg-[#ffe533] text-black text-[10px] font-black uppercase rounded transition-colors shrink-0"
+              >
+                Add
+              </button>
+            </div>
+
+            {officials.length > 0 ? (
+              <div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto no-scrollbar pt-1">
+                {officials.map((off, idx) => (
+                  <div key={idx} className="flex items-center gap-1.5 bg-zinc-900 border border-zinc-800 rounded px-2 py-1 text-xs">
+                    <span className="font-mono font-black bg-white text-black px-1.5 py-0.5 rounded text-[9px] border border-white leading-none">{off.initials}</span>
+                    <span className="text-gray-400 text-[10px] truncate max-w-[100px]">{off.name || 'Official'}</span>
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveOfficial(off.initials)}
+                      className="text-red-500 hover:text-red-400 font-bold ml-1 text-xs leading-none"
+                    >
+                      &times;
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-[9px] text-white italic">No officials configured yet.</p>
+            )}
           </div>
         </div>
 
@@ -371,7 +441,8 @@ export const TournamentSetup: React.FC<TournamentSetupProps> = ({ onSetupComplet
               paceOfPlay: paceData, 
               groups, 
               kmlData,
-              timeOffset: sandboxTime ? offset : (sandboxTime === '' ? 0 : currentInfo?.timeOffset)
+              timeOffset: sandboxTime ? offset : (sandboxTime === '' ? 0 : currentInfo?.timeOffset),
+              officials
             });
           }}
           className={`w-full py-4 rounded-xl font-black text-sm uppercase transition-all flex items-center justify-center gap-2 ${
@@ -384,7 +455,7 @@ export const TournamentSetup: React.FC<TournamentSetupProps> = ({ onSetupComplet
         </button>
 
         {currentInfo && (
-           <p className="text-center text-[9px] text-gray-600 mt-4 italic">
+           <p className="text-center text-[9px] text-white mt-4 italic">
             Current: {currentInfo.name} - Round {currentInfo.round}
            </p>
         )}
