@@ -535,11 +535,9 @@ export default function App() {
           {officialInitials && (
             <button
               onClick={() => {
-                if (confirm('Are you sure you want to change your Rules Official initials?')) {
-                  localStorage.removeItem('golf-official-initials');
-                  setOfficialInitials('');
-                  setTempInitials('');
-                }
+                localStorage.removeItem('golf-official-initials');
+                setOfficialInitials('');
+                setTempInitials('');
               }}
               className="px-1.5 py-0.5 text-[10px] tracking-wider font-mono font-black bg-black border border-white text-white rounded cursor-pointer shrink-0"
               title="Click to change initials"
@@ -549,14 +547,12 @@ export default function App() {
           )}
           <button 
             onClick={() => {
-              if (confirm('Are you sure you want to sign out?')) {
-                localStorage.removeItem('golf-official-initials');
-                localStorage.removeItem('golf-admin-logged-in');
-                setOfficialInitials('');
-                setIsAdminLoggedIn(false);
-                setTempInitials('');
-                signOut(auth);
-              }
+              localStorage.removeItem('golf-official-initials');
+              localStorage.removeItem('golf-admin-logged-in');
+              setOfficialInitials('');
+              setIsAdminLoggedIn(false);
+              setTempInitials('');
+              signOut(auth);
             }}
             className="p-2 rounded-full hover:bg-zinc-800 text-zinc-500 transition-colors"
             title="Sign out"
