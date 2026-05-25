@@ -78,7 +78,7 @@ const getHoleCoordinatesFromKml = (kmlDataStr: string | undefined, targetHole: s
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'lost' | 'shot' | 'history' | 'tournament' | 'summary' | 'flag' | 'control' | 'map'>('shot');
+  const [activeTab, setActiveTab] = useState<'lost' | 'shot' | 'history' | 'tournament' | 'summary' | 'flag' | 'control' | 'map'>('map');
   const [activeHole, setActiveHole] = useState<string>(() => localStorage.getItem('golf-active-hole') || '1');
   const [activeGroup, setActiveGroup] = useState<string>(() => localStorage.getItem('golf-active-group') || '1');
   const [records, setRecords] = useState<PlayerShotRecord[]>([]);
@@ -333,14 +333,6 @@ export default function App() {
       }
     }
   }, [activeTab, activeHole, tournamentId, officialInitials, tournament, officialsLocations, timeOffset]);
-
-  // Track when referee enters "Ctrl Hole" (control tab) and has a selected hole in test/sandbox mode
-  useEffect(() => {
-    if (timeOffset !== 0 && activeTab === 'control' && activeHole) {
-      setTestActiveHoleInControl(activeHole);
-      localStorage.setItem('golf-test-active-hole-control', activeHole);
-    }
-  }, [activeTab, activeHole, timeOffset]);
 
   // In test mode: Place referee behind first tee of Hole 1, until they enter "Ctrl Hole" and select a hole.
   // Then, move their indicator to beside that hole on the map (using the green coordinates of the hole).
@@ -778,8 +770,14 @@ export default function App() {
               onRecordAdded={handleRecordAdded}
               records={records}
               tournamentInfo={tournament}
-              selectedHole={activeHole}
-              setSelectedHole={setActiveHole}
+              selectedHole={timeOffset !== 0 ? (testActiveHoleInControl || '') : activeHole}
+              setSelectedHole={(hole) => {
+                setActiveHole(hole);
+                if (timeOffset !== 0) {
+                  setTestActiveHoleInControl(hole);
+                  localStorage.setItem('golf-test-active-hole-control', hole);
+                }
+              }}
               setActiveGroup={setActiveGroup}
               currentTime={currentTime}
             />

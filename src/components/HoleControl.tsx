@@ -28,7 +28,7 @@ export const HoleControl: React.FC<HoleControlProps> = ({
 
   // Automatically select the next group expected at this hole/time when selectedHole changes
   useEffect(() => {
-    if (tournamentInfo) {
+    if (tournamentInfo && selectedHole) {
       const nextGroup = getNextGroupExpected(selectedHole, tournamentInfo, records, now);
       if (nextGroup) {
         setActiveGroup(nextGroup);
@@ -95,7 +95,7 @@ export const HoleControl: React.FC<HoleControlProps> = ({
   // Get groups that haven't finished this hole yet, 
   // and only show groups that are "behind" (later than) the most recently finished group.
   const availableGroups = (() => {
-    if (!tournamentInfo) return [];
+    if (!tournamentInfo || !selectedHole) return [];
     
     // 1. Get all groups that have recorded a Flag In on this hole
     const finishedRecords = records.filter(r => 
@@ -159,6 +159,9 @@ export const HoleControl: React.FC<HoleControlProps> = ({
               onChange={(e) => setSelectedHole(e.target.value)}
               className="bg-transparent font-black text-sm outline-none cursor-pointer"
             >
+              {!selectedHole && (
+                <option value="" disabled className="bg-zinc-900 text-zinc-500">Select...</option>
+              )}
               {Array.from({ length: 18 }, (_, i) => String(i + 1)).map(n => (
                 <option key={n} value={n} className="bg-zinc-900">{n}</option>
               ))}
@@ -243,8 +246,18 @@ export const HoleControl: React.FC<HoleControlProps> = ({
         })}
 
         {displayGroups.length === 0 && (
-          <div className="text-center py-12 text-gray-500">
-             <p className="text-sm italic">No groups in range for this hole.</p>
+          <div className="text-center py-12 text-zinc-500">
+             {!selectedHole ? (
+               <div className="flex flex-col items-center justify-center gap-2">
+                 <MapPin className="text-[#FFDD00] mb-2 animate-bounce animate-pulse" size={32} />
+                 <p className="text-sm font-black uppercase text-[#FFDD00]">Select Hole Control</p>
+                 <p className="text-xs text-zinc-400 max-w-[260px] leading-relaxed mx-auto">
+                   Please select a hole number from the dropdown at the top right to start tracking and move your indicator on the map.
+                 </p>
+               </div>
+             ) : (
+               <p className="text-sm italic">No groups in range for this hole.</p>
+             )}
           </div>
         )}
       </div>
