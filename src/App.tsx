@@ -92,6 +92,13 @@ export default function App() {
     localStorage.setItem('golf-active-group', activeGroup);
   }, [activeGroup]);
 
+  // Restrict Setup/Tournament tab strictly to Admin (user XX)
+  useEffect(() => {
+    if (activeTab === 'tournament' && officialInitials !== 'XX') {
+      setActiveTab('shot');
+    }
+  }, [activeTab, officialInitials]);
+
   const [currentTime, setCurrentTime] = useState(new Date());
   const [timeOffset, setTimeOffset] = useState(() => Number(localStorage.getItem('golf-time-offset')) || 0);
 
@@ -706,17 +713,19 @@ export default function App() {
             </div>
             <span className="text-[9px] font-bold uppercase tracking-wider text-center">Map View</span>
           </button>
-          <button 
-            onClick={() => setActiveTab('tournament')}
-            className={`flex flex-col items-center gap-1.5 transition-all outline-none ${
-              activeTab === 'tournament' ? 'text-[#FFDD00] scale-105' : 'text-zinc-500 hover:text-zinc-300'
-            }`}
-          >
-            <div className={`p-1.5 rounded-lg ${activeTab === 'tournament' ? 'bg-[#FFDD00]/10' : ''}`}>
-              <Trophy size={20} />
-            </div>
-            <span className="text-[9px] font-bold uppercase tracking-wider text-center">Setup</span>
-          </button>
+          {officialInitials === 'XX' && (
+            <button 
+              onClick={() => setActiveTab('tournament')}
+              className={`flex flex-col items-center gap-1.5 transition-all outline-none ${
+                activeTab === 'tournament' ? 'text-[#FFDD00] scale-105' : 'text-zinc-500 hover:text-zinc-300'
+              }`}
+            >
+              <div className={`p-1.5 rounded-lg ${activeTab === 'tournament' ? 'bg-[#FFDD00]/10' : ''}`}>
+                <Trophy size={20} />
+              </div>
+              <span className="text-[9px] font-bold uppercase tracking-wider text-center">Setup</span>
+            </button>
+          )}
           <button 
             onClick={() => setActiveTab('lost')}
             className={`flex flex-col items-center gap-1.5 transition-all outline-none ${
