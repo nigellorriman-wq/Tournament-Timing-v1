@@ -14,7 +14,11 @@ import { auth, db, signInWithGoogle, handleFirestoreError, OperationType } from 
 import { onAuthStateChanged, User, signOut, signInAnonymously } from 'firebase/auth';
 import { doc, onSnapshot, setDoc, updateDoc, collection, addDoc, query, orderBy, deleteDoc, getDocs, writeBatch } from 'firebase/firestore';
 
-const getHoleCoordinatesFromKml = (kmlDataStr: string | undefined, targetHole: string): { lat: number; lng: number } | null => {
+const getCoordinateFromKml = (
+  kmlDataStr: string | undefined,
+  targetHole: string,
+  type: 'tee' | 'green' | 'behind_tee'
+): { lat: number; lng: number } | null => {
   if (!kmlDataStr) return null;
   try {
     const parser = new DOMParser();
@@ -35,9 +39,28 @@ const getHoleCoordinatesFromKml = (kmlDataStr: string | undefined, targetHole: s
           const holeId = holeMatch ? parseInt(holeMatch[1], 10).toString() : name;
           
           if (holeId === targetHole) {
-            // Green coordinates of the hole (last coordinate in the list)
-            const greenCoord = coords[coords.length - 1];
-            return { lat: greenCoord[0], lng: greenCoord[1] };
+            if (type === 'green') {
+              const greenCoord = coords[coords.length - 1];
+              return { lat: greenCoord[0], lng: greenCoord[1] };
+            } else if (type === 'tee') {
+              const teeCoord = coords[0];
+              return { lat: teeCoord[0], lng: teeCoord[1] };
+            } else if (type === 'behind_tee') {
+              const teeCoord = coords[0];
+              if (coords.length > 1) {
+                // Direction of first segment is coords[1] - coords[0]
+                // We want to go in the opposite direction: coords[0] - (coords[1] - coords[0]) * 0.15
+                const nextCoord = coords[1];
+                const latDiff = nextCoord[0] - teeCoord[0];
+                const lngDiff = nextCoord[1] - teeCoord[1];
+                return {
+                  lat: teeCoord[0] - latDiff * 0.15,
+                  lng: teeCoord[1] - lngDiff * 0.15
+                };
+              }
+              // Fallback if only 1 coordinate
+              return { lat: teeCoord[0] - 0.0001, lng: teeCoord[1] };
+            }
           }
         }
       }
@@ -46,6 +69,10 @@ const getHoleCoordinatesFromKml = (kmlDataStr: string | undefined, targetHole: s
     console.error("Error parsing KML for hole coords:", err);
   }
   return null;
+};
+
+const getHoleCoordinatesFromKml = (kmlDataStr: string | undefined, targetHole: string): { lat: number; lng: number } | null => {
+  return getCoordinateFromKml(kmlDataStr, targetHole, 'green');
 };
 
 export default function App() {
@@ -101,6 +128,9 @@ export default function App() {
 
   const [currentTime, setCurrentTime] = useState(new Date());
   const [timeOffset, setTimeOffset] = useState(() => Number(localStorage.getItem('golf-time-offset')) || 0);
+  const [testActiveHoleInControl, setTestActiveHoleInControl] = useState<string | null>(() => {
+    return localStorage.getItem('golf-test-active-hole-control');
+  });
 
   // Update clock
   useEffect(() => {
@@ -229,8 +259,9 @@ export default function App() {
     };
   }, [user, tournamentId]);
 
-  // Realtime coordinates tracking of the current official
+  // Realtime coordinates tracking of the current official (only when NOT in test mode/sandbox time)
   useEffect(() => {
+    if (timeOffset !== 0) return; // When in test mode, do not poll referee geolocations
     if (!navigator.geolocation || !tournamentId || !officialInitials) return;
 
     const watchId = navigator.geolocation.watchPosition(
@@ -258,11 +289,12 @@ export default function App() {
     );
 
     return () => navigator.geolocation.clearWatch(watchId);
-  }, [tournamentId, officialInitials]);
+  }, [tournamentId, officialInitials, timeOffset]);
 
-  // Handle referee in 'Hole Control' with missing or fallback georeference information.
+  // Handle referee in 'Hole Control' with missing or fallback georeference information (only when NOT in test mode/sandbox time)
   // Uses the hole they are controlling as their location. Update the map automatically on sync.
   useEffect(() => {
+    if (timeOffset !== 0) return; // Sandbox geolocs are handled by other effects below
     if (activeTab !== 'control' || !tournamentId || !officialInitials || !tournament) return;
 
     // Check if we have an actual (non-fallback) georeference for the current official
@@ -300,7 +332,67 @@ export default function App() {
         }
       }
     }
-  }, [activeTab, activeHole, tournamentId, officialInitials, tournament, officialsLocations]);
+  }, [activeTab, activeHole, tournamentId, officialInitials, tournament, officialsLocations, timeOffset]);
+
+  // Track when referee enters "Ctrl Hole" (control tab) and has a selected hole in test/sandbox mode
+  useEffect(() => {
+    if (timeOffset !== 0 && activeTab === 'control' && activeHole) {
+      setTestActiveHoleInControl(activeHole);
+      localStorage.setItem('golf-test-active-hole-control', activeHole);
+    }
+  }, [activeTab, activeHole, timeOffset]);
+
+  // In test mode: Place referee behind first tee of Hole 1, until they enter "Ctrl Hole" and select a hole.
+  // Then, move their indicator to beside that hole on the map (using the green coordinates of the hole).
+  useEffect(() => {
+    if (timeOffset === 0 || !tournamentId || !officialInitials || !tournament) return;
+
+    let targetLat: number | null = null;
+    let targetLng: number | null = null;
+
+    if (!testActiveHoleInControl) {
+      // Place them behind the first tee of Hole 1
+      const coords = getCoordinateFromKml(tournament.kmlData, "1", "behind_tee");
+      if (coords) {
+        targetLat = coords.lat;
+        targetLng = coords.lng;
+      }
+    } else {
+      // Move their indicator to beside the selected hole on the map (the green of the hole)
+      const coords = getCoordinateFromKml(tournament.kmlData, testActiveHoleInControl, "green");
+      if (coords) {
+        targetLat = coords.lat;
+        targetLng = coords.lng;
+      }
+    }
+
+    if (targetLat !== null && targetLng !== null) {
+      const refereeLoc = officialsLocations.find(l => 
+        l.id === officialInitials || l.initials?.toUpperCase() === officialInitials.toUpperCase()
+      );
+
+      const curLat = refereeLoc?.lat;
+      const curLng = refereeLoc?.lng;
+
+      const currentLatShort = curLat ? Number(curLat).toFixed(6) : "";
+      const targetLatShort = Number(targetLat).toFixed(6);
+      const currentLngShort = curLng ? Number(curLng).toFixed(6) : "";
+      const targetLngShort = Number(targetLng).toFixed(6);
+
+      if (currentLatShort !== targetLatShort || currentLngShort !== targetLngShort) {
+        const officialRef = doc(db, 'tournaments', tournamentId, 'officials_locations', officialInitials);
+        setDoc(officialRef, {
+          initials: officialInitials.toUpperCase().slice(0, 2),
+          lat: targetLat,
+          lng: targetLng,
+          isAssignedHoleLocation: true,
+          timestamp: Date.now()
+        }, { merge: true }).catch(err => {
+          console.error("Error setting official test mode location in Firestore:", err);
+        });
+      }
+    }
+  }, [timeOffset, testActiveHoleInControl, tournamentId, officialInitials, tournament, officialsLocations]);
 
   // Request wake lock and lock orientation on interaction
   const handleInteraction = async () => {
@@ -543,8 +635,10 @@ export default function App() {
             <button
               onClick={() => {
                 localStorage.removeItem('golf-official-initials');
+                localStorage.removeItem('golf-test-active-hole-control');
                 setOfficialInitials('');
                 setTempInitials('');
+                setTestActiveHoleInControl(null);
               }}
               className="px-1.5 py-0.5 text-[10px] tracking-wider font-mono font-black bg-black border border-white text-white rounded cursor-pointer shrink-0"
               title="Click to change initials"
@@ -556,9 +650,11 @@ export default function App() {
             onClick={() => {
               localStorage.removeItem('golf-official-initials');
               localStorage.removeItem('golf-admin-logged-in');
+              localStorage.removeItem('golf-test-active-hole-control');
               setOfficialInitials('');
               setIsAdminLoggedIn(false);
               setTempInitials('');
+              setTestActiveHoleInControl(null);
               signOut(auth);
             }}
             className="p-2 rounded-full hover:bg-zinc-800 text-zinc-500 transition-colors"
