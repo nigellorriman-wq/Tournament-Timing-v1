@@ -2,9 +2,8 @@ import React, { useState } from 'react';
 import Papa from 'papaparse';
 import { Upload, X, Check, FileText, Trophy, Calendar, FileType, Sparkles, Loader2, Map as MapIcon, Clock, User } from 'lucide-react';
 import { TournamentInfo, HolePace, GroupData, OfficialData } from '../types';
-import { GoogleGenAI, Type } from "@google/genai";
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+
 
 interface TournamentSetupProps {
   onSetupComplete: (data: TournamentInfo) => void;
@@ -152,62 +151,20 @@ export const TournamentSetup: React.FC<TournamentSetupProps> = ({ onSetupComplet
       reader.readAsDataURL(file);
       const base64Data = await base64Promise;
 
-      const result = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents: {
-          parts: [
-            {
-              inlineData: {
-                mimeType: "application/pdf",
-                data: base64Data,
-              },
-            },
-            {
-              text: "Extract tournament information from this golf start list. Include tournament name, round number, group numbers, start times, starting tees, players (full names), and pace of play (minutes per hole for holes 1-18)."
-            }
-          ]
+      const response = await fetch('/api/parse-pdf', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
         },
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              name: { type: Type.STRING },
-              round: { type: Type.STRING },
-              paceOfPlay: {
-                type: Type.ARRAY,
-                items: {
-                  type: Type.OBJECT,
-                  properties: {
-                    hole: { type: Type.NUMBER },
-                    minutes: { type: Type.NUMBER },
-                  },
-                  required: ["hole", "minutes"],
-                },
-              },
-              groups: {
-                type: Type.ARRAY,
-                items: {
-                  type: Type.OBJECT,
-                  properties: {
-                    groupNumber: { type: Type.STRING },
-                    startTime: { type: Type.STRING },
-                    startingTee: { type: Type.NUMBER },
-                    players: {
-                      type: Type.ARRAY,
-                      items: { type: Type.STRING },
-                    },
-                  },
-                  required: ["groupNumber", "startTime", "players"],
-                },
-              },
-            },
-            required: ["name", "round", "paceOfPlay", "groups"],
-          }
-        }
+        body: JSON.stringify({ pdfBase64: base64Data })
       });
 
-      const parsed = JSON.parse(result.text || '{}');
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.error || `Server error: ${response.status}`);
+      }
+
+      const parsed = await response.json();
       if (parsed.name) setName(parsed.name);
       if (parsed.round) setRound(String(parsed.round));
       if (parsed.paceOfPlay) setPaceData(parsed.paceOfPlay);

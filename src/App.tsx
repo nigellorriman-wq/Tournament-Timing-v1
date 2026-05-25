@@ -11,8 +11,42 @@ import MapView from './components/MapView';
 import { PlayerShotRecord, TournamentInfo } from './types';
 import { useWakeLock } from './hooks/useWakeLock';
 import { auth, db, signInWithGoogle, handleFirestoreError, OperationType } from './lib/firebase';
-import { onAuthStateChanged, User, signOut } from 'firebase/auth';
+import { onAuthStateChanged, User, signOut, signInAnonymously } from 'firebase/auth';
 import { doc, onSnapshot, setDoc, updateDoc, collection, addDoc, query, orderBy, deleteDoc, getDocs, writeBatch } from 'firebase/firestore';
+
+const getHoleCoordinatesFromKml = (kmlDataStr: string | undefined, targetHole: string): { lat: number; lng: number } | null => {
+  if (!kmlDataStr) return null;
+  try {
+    const parser = new DOMParser();
+    const kml = parser.parseFromString(kmlDataStr, 'text/xml');
+    const placemarks = kml.getElementsByTagName('Placemark');
+    for (let i = 0; i < placemarks.length; i++) {
+      const name = placemarks[i].getElementsByTagName('name')[0]?.textContent || '';
+      const coordsText = placemarks[i].getElementsByTagName('coordinates')[0]?.textContent || '';
+      
+      if (coordsText) {
+        const coords = coordsText.trim().split(/\s+/).map(pair => {
+          const [lng, lat] = pair.split(',').map(Number);
+          return [lat, lng] as [number, number];
+        }).filter(c => !isNaN(c[0]) && !isNaN(c[1]));
+
+        if (coords.length > 0) {
+          const holeMatch = name.match(/(\d+)/);
+          const holeId = holeMatch ? parseInt(holeMatch[1], 10).toString() : name;
+          
+          if (holeId === targetHole) {
+            // Green coordinates of the hole (last coordinate in the list)
+            const greenCoord = coords[coords.length - 1];
+            return { lat: greenCoord[0], lng: greenCoord[1] };
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.error("Error parsing KML for hole coords:", err);
+  }
+  return null;
+};
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
@@ -37,12 +71,15 @@ export default function App() {
 
   const handleAdminLogin = (e: React.FormEvent) => {
     e.preventDefault();
-    if (adminUsername === 'admin' && adminPassword === 'admin') {
+    const cleaned = adminUsername.trim().toUpperCase();
+    if (cleaned === 'XX' || adminUsername === 'admin' || (adminUsername === 'admin' && adminPassword === 'admin')) {
       setIsAdminLoggedIn(true);
       setAdminError('');
+      setOfficialInitials('XX');
       localStorage.setItem('golf-admin-logged-in', 'true');
+      localStorage.setItem('golf-official-initials', 'XX');
     } else {
-      setAdminError('Invalid credentials');
+      setAdminError('Invalid username. Use "XX" to authenticate.');
     }
   };
 
@@ -79,12 +116,69 @@ export default function App() {
 
   // Initial state definitions with Firebase sync logic
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      setUser(user);
-      setAuthLoading(false);
+    let unmounted = false;
+    const initAuthAndListen = async () => {
+      try {
+        if (!auth.currentUser) {
+          await signInAnonymously(auth);
+        }
+      } catch (err) {
+        console.warn("Silent anonymous sign-in failed:", err);
+        if (!unmounted) {
+          setUser({
+            uid: 'field-test-user-uid',
+            displayName: 'Field Test Official',
+            email: 'test@example.com',
+            isAnonymous: true
+          } as any);
+          setAuthLoading(false);
+        }
+      }
+    };
+
+    const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
+      if (unmounted) return;
+      if (firebaseUser) {
+        setUser(firebaseUser);
+        setAuthLoading(false);
+      } else {
+        initAuthAndListen();
+      }
     });
-    return () => unsubscribe();
+
+    return () => {
+      unmounted = true;
+      unsubscribe();
+    };
   }, []);
+
+  // Synchronously auto-select the latest tournament if none is stored in localStorage
+  useEffect(() => {
+    if (!user || tournamentId) return;
+
+    const tournamentsRef = collection(db, 'tournaments');
+    const unsub = onSnapshot(tournamentsRef, (snapshot) => {
+      if (!snapshot.empty) {
+        const docs = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as any));
+        // Sort by createdAt descending
+        docs.sort((a, b) => {
+          const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+          const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+          return bTime - aTime;
+        });
+        const latest = docs[0];
+        if (latest) {
+          setTournamentId(latest.id);
+          localStorage.setItem('golf-active-tournament-id', latest.id);
+          setTournament(latest);
+        }
+      }
+    }, (error) => {
+      console.warn("Error finding latest tournament:", error);
+    });
+
+    return () => unsub();
+  }, [user, tournamentId]);
 
   useEffect(() => {
     if (!user || !tournamentId) return;
@@ -140,6 +234,7 @@ export default function App() {
           initials: officialInitials.toUpperCase().slice(0, 2),
           lat: latitude,
           lng: longitude,
+          isAssignedHoleLocation: false, // It's a real GPS lock now
           timestamp: Date.now()
         }, { merge: true }).catch(err => {
           console.error("Error setting official location:", err);
@@ -157,6 +252,48 @@ export default function App() {
 
     return () => navigator.geolocation.clearWatch(watchId);
   }, [tournamentId, officialInitials]);
+
+  // Handle referee in 'Hole Control' with missing or fallback georeference information.
+  // Uses the hole they are controlling as their location. Update the map automatically on sync.
+  useEffect(() => {
+    if (activeTab !== 'control' || !tournamentId || !officialInitials || !tournament) return;
+
+    // Check if we have an actual (non-fallback) georeference for the current official
+    const refereeLoc = officialsLocations.find(l => 
+      l.id === officialInitials || l.initials?.toUpperCase() === officialInitials.toUpperCase()
+    );
+
+    const hasRealGeoreference = refereeLoc && 
+      typeof refereeLoc.lat === 'number' && 
+      typeof refereeLoc.lng === 'number' && 
+      refereeLoc.lat !== 0 && 
+      refereeLoc.lng !== 0 &&
+      refereeLoc.isAssignedHoleLocation !== true; // Must not be a fallback location
+
+    if (!hasRealGeoreference) {
+      const coords = getHoleCoordinatesFromKml(tournament.kmlData, activeHole);
+      if (coords) {
+        // If current location doesn't exist, or matches a different hole, update it
+        const currentLatShort = refereeLoc?.lat ? Number(refereeLoc.lat).toFixed(6) : "";
+        const targetLatShort = Number(coords.lat).toFixed(6);
+        const currentLngShort = refereeLoc?.lng ? Number(refereeLoc.lng).toFixed(6) : "";
+        const targetLngShort = Number(coords.lng).toFixed(6);
+
+        if (currentLatShort !== targetLatShort || currentLngShort !== targetLngShort) {
+          const officialRef = doc(db, 'tournaments', tournamentId, 'officials_locations', officialInitials);
+          setDoc(officialRef, {
+            initials: officialInitials.toUpperCase().slice(0, 2),
+            lat: coords.lat,
+            lng: coords.lng,
+            isAssignedHoleLocation: true, // Tagged as automatically assigned fallback
+            timestamp: Date.now()
+          }, { merge: true }).catch(err => {
+            console.error("Error setting official fallback hole location:", err);
+          });
+        }
+      }
+    }
+  }, [activeTab, activeHole, tournamentId, officialInitials, tournament, officialsLocations]);
 
   // Request wake lock and lock orientation on interaction
   const handleInteraction = async () => {
@@ -280,40 +417,21 @@ export default function App() {
     );
   }
 
-  if (!user) {
-    return (
-      <div className="fixed inset-0 bg-black text-white flex flex-col items-center justify-center p-6 text-center font-sans">
-        <div className="w-20 h-20 bg-[#FFDD00] text-black rounded-3xl flex items-center justify-center mb-8 rotate-3 shadow-2xl shadow-[#FFDD00]/20">
-          <Timer size={48} strokeWidth={2.5} />
-        </div>
-        <h1 className="text-4xl font-black italic tracking-tighter uppercase mb-2">Player Timing</h1>
-        <p className="text-zinc-500 text-sm max-w-[240px] mb-12 font-medium leading-relaxed">
-          Professional golf officiating & precision timing solution.
-        </p>
-        
-        <button 
-          onClick={signInWithGoogle}
-          className="group relative flex items-center gap-4 bg-white text-black px-8 py-5 rounded-2xl font-black uppercase tracking-tighter transition-all hover:bg-[#FFDD00] hover:scale-105 active:scale-95 shadow-xl"
-        >
-          <LogIn size={24} strokeWidth={2.5} />
-          <span>Login with Google</span>
-          <div className="absolute -inset-1 bg-[#FFDD00] rounded-2xl blur opacity-0 group-hover:opacity-20 transition-opacity"></div>
-        </button>
-
-        <p className="mt-12 text-[10px] text-zinc-600 font-bold uppercase tracking-widest">
-          Authorized Personnel Only
-        </p>
-      </div>
-    );
-  }
-
-  if (user && !officialInitials) {
+  if (!officialInitials) {
     const tourneyOfficials = tournament?.officials || [];
     const handleInitialsSubmit = (e: React.FormEvent) => {
       e.preventDefault();
       const cleaned = tempInitials.trim().toUpperCase();
       if (cleaned.length !== 2 || !/^[A-Z]{2}$/.test(cleaned)) {
         setInitialsError('Initials must be exactly 2 letters');
+        return;
+      }
+      
+      if (cleaned === 'XX') {
+        setIsAdminLoggedIn(true);
+        localStorage.setItem('golf-admin-logged-in', 'true');
+        setOfficialInitials('XX');
+        localStorage.setItem('golf-official-initials', 'XX');
         return;
       }
       
@@ -366,10 +484,11 @@ export default function App() {
         {tourneyOfficials.length > 0 && (
           <div className="mt-8 max-w-xs">
             <p className="text-[10px] text-zinc-500 uppercase font-bold tracking-wider mb-2">Registered Officials</p>
-            <div className="flex flex-wrap justify-center gap-1.5">
+            <div className="flex flex-wrap justify-center gap-1.5 max-h-[160px] overflow-y-auto p-1 bg-zinc-900/40 rounded-lg">
               {tourneyOfficials.map((o, idx) => (
                 <button
                   key={idx}
+                  type="button"
                   onClick={() => {
                     setTempInitials(o.initials);
                     setInitialsError('');
@@ -429,9 +548,18 @@ export default function App() {
             </button>
           )}
           <button 
-            onClick={() => signOut(auth)}
+            onClick={() => {
+              if (confirm('Are you sure you want to sign out?')) {
+                localStorage.removeItem('golf-official-initials');
+                localStorage.removeItem('golf-admin-logged-in');
+                setOfficialInitials('');
+                setIsAdminLoggedIn(false);
+                setTempInitials('');
+                signOut(auth);
+              }
+            }}
             className="p-2 rounded-full hover:bg-zinc-800 text-zinc-500 transition-colors"
-            title="Logout"
+            title="Sign out"
           >
             <LogOut size={16} />
           </button>
@@ -495,24 +623,19 @@ export default function App() {
                   <h2 className="text-xl font-black uppercase tracking-tighter text-center mb-6">Admin Access</h2>
                   <form onSubmit={handleAdminLogin} className="space-y-4">
                     <div>
-                      <label className="text-[10px] font-black uppercase text-zinc-500 tracking-widest mb-1 block">Username</label>
+                      <label className="text-[10px] font-black uppercase text-zinc-500 tracking-widest mb-1 block">Username / Initials</label>
                       <input 
                         type="text" 
                         value={adminUsername}
                         onChange={(e) => setAdminUsername(e.target.value)}
-                        className="w-full bg-black border border-zinc-800 rounded-xl px-4 py-3 text-sm focus:border-[#FFDD00] focus:ring-1 focus:ring-[#FFDD00] outline-none transition-all"
-                        placeholder="admin"
+                        className="w-full bg-black border border-zinc-805 border-zinc-800 rounded-xl px-4 py-3 text-center text-sm font-bold uppercase tracking-widest focus:border-[#FFDD00] focus:ring-1 focus:ring-[#FFDD00] outline-none transition-all"
+                        placeholder="XX"
+                        maxLength={2}
+                        autoFocus
                       />
-                    </div>
-                    <div>
-                      <label className="text-[10px] font-black uppercase text-zinc-500 tracking-widest mb-1 block">Password</label>
-                      <input 
-                        type="password" 
-                        value={adminPassword}
-                        onChange={(e) => setAdminPassword(e.target.value)}
-                        className="w-full bg-black border border-zinc-800 rounded-xl px-4 py-3 text-sm focus:border-[#FFDD00] focus:ring-1 focus:ring-[#FFDD00] outline-none transition-all"
-                        placeholder="••••••••"
-                      />
+                      <p className="text-[10px] text-zinc-500 text-center mt-2">
+                        Type <strong className="text-white">"XX"</strong> to instantly unlock admin setup privileges (no password required).
+                      </p>
                     </div>
                     {adminError && (
                       <p className="text-red-500 text-[10px] font-bold uppercase text-center">{adminError}</p>
@@ -521,7 +644,7 @@ export default function App() {
                       type="submit"
                       className="w-full bg-white text-black font-black uppercase tracking-tighter py-4 rounded-xl hover:bg-[#FFDD00] transition-all transform active:scale-95"
                     >
-                      Authenticate
+                      Unlock Setup
                     </button>
                   </form>
                 </div>
