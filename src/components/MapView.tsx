@@ -145,7 +145,15 @@ export default function MapView({ tournamentInfo, records, currentTime, official
 
   const activeOfficialsLocations = useMemo(() => {
     const hasSandboxTime = tournamentInfo?.timeOffset !== undefined && tournamentInfo?.timeOffset !== 0;
-    if (!hasSandboxTime || !tournamentInfo?.officials || tournamentInfo.officials.length === 0 || holeLayouts.length === 0) {
+    if (hasSandboxTime) {
+      return (officialsLocations || []).map(off => ({
+        ...off,
+        initials: off.initials || off.id || 'RF',
+        timestamp: Date.now() // Bypass the 1-hour expiration filter for sandbox testing
+      }));
+    }
+
+    if (!tournamentInfo?.officials || tournamentInfo.officials.length === 0 || holeLayouts.length === 0) {
       return officialsLocations || [];
     }
 
