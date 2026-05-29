@@ -506,59 +506,127 @@ export default function MapView({ tournamentInfo, records, currentTime, official
             );
           })}
 
-          {groupPositions.map((pos, idx) => (
-            <Marker 
-              key={`group-${idx}`} 
-              position={[pos.lat, pos.lng]}
-              icon={L.divIcon({
-                html: `
-                  <div class="group-marker ${pos.estimated ? 'estimated' : ''} ${pos.paceStatus === 'Behind' ? 'behind' : ''} ${pos.paceStatus === 'Ahead' ? 'ahead' : ''} ${pos.paceStatus === 'On Time' ? 'ontime' : ''}">
-                    <span class="label">${pos.groupNumber}</span>
-                  </div>
-                `,
-                className: '',
-                iconSize: [32, 32],
-                iconAnchor: [16, 16]
-              })}
-            >
-              <Popup>
-                <div className="text-black p-1 min-w-[120px]">
-                  <div className="flex items-center justify-between gap-4 mb-2">
-                    <div className="font-black text-sm uppercase">Group {pos.groupNumber}</div>
-                    <div className={`text-[8px] font-black px-1.5 py-0.5 rounded uppercase ${
-                      pos.paceStatus === 'Behind' ? 'bg-red-500 text-white' : 
-                      pos.paceStatus === 'Ahead' ? 'bg-blue-500 text-white' : 
-                      'bg-green-500 text-white'
-                    }`}>
-                      {pos.paceStatus}
-                    </div>
-                  </div>
-                  
-                  <div className="space-y-1 mb-2">
-                    {pos.players.map((p, i) => (
-                      <div key={i} className="flex items-center gap-1.5 text-[10px] font-bold text-zinc-600">
-                        <div className="w-1 h-1 rounded-full bg-zinc-300"></div>
-                        {p}
-                      </div>
-                    ))}
-                  </div>
+          {groupPositions.map((pos, idx) => {
+            const groupTimers = activeOfficialsLocations
+              .filter(off => off.activeTimer && String(off.activeTimer.group) === String(pos.groupNumber))
+              .map(off => off.activeTimer);
 
-                  <div className="pt-2 border-t border-zinc-100 flex flex-col gap-1">
-                    <div className="text-[9px] text-zinc-400 font-bold uppercase flex items-center justify-between">
-                      <span>Location</span>
-                      <span className="text-zinc-900">Hole {pos.hole}</span>
+            const isGroupTimed = groupTimers.length > 0;
+
+            const groupLevelTimers = groupTimers.filter(t => !pos.players.includes(t.playerName));
+
+            return (
+              <Marker 
+                key={`group-${idx}`} 
+                position={[pos.lat, pos.lng]}
+                icon={L.divIcon({
+                  html: `
+                    <div class="group-marker ${isGroupTimed ? 'pulse-timer' : ''} ${pos.estimated ? 'estimated' : ''} ${pos.paceStatus === 'Behind' ? 'behind' : ''} ${pos.paceStatus === 'Ahead' ? 'ahead' : ''} ${pos.paceStatus === 'On Time' ? 'ontime' : ''}">
+                      <span class="label">${pos.groupNumber}</span>
                     </div>
-                    <div className="text-[9px] text-zinc-400 font-bold uppercase flex items-center justify-between">
-                      <span>Status</span>
-                      <span className={pos.estimated ? 'text-zinc-500' : 'text-green-600'}>
-                        {pos.estimated ? 'ESTIMATED' : 'CONFIRMED'}
-                      </span>
+                  `,
+                  className: '',
+                  iconSize: [32, 32],
+                  iconAnchor: [16, 16]
+                })}
+              >
+                <Popup>
+                  <div className="text-black p-1 min-w-[140px]">
+                    <div className="flex items-center justify-between gap-4 mb-2">
+                      <div className="font-black text-sm uppercase">Group {pos.groupNumber}</div>
+                      <div className={`text-[8px] font-black px-1.5 py-0.5 rounded uppercase ${
+                        pos.paceStatus === 'Behind' ? 'bg-red-500 text-white' : 
+                        pos.paceStatus === 'Ahead' ? 'bg-blue-500 text-white' : 
+                        'bg-green-500 text-white'
+                      }`}>
+                        {pos.paceStatus}
+                      </div>
+                    </div>
+                    
+                    <div className="space-y-1 mb-2">
+                      {pos.players.map((p, i) => {
+                        const playerTimer = groupTimers.find(t => t.playerName === p);
+                        return (
+                          <div 
+                            key={i} 
+                            className={`flex items-center justify-between gap-1.5 text-[10px] font-bold p-1 rounded-sm ${
+                              playerTimer 
+                                ? 'text-zinc-950 bg-amber-50 border border-amber-200 animate-pulse' 
+                                : 'text-zinc-600'
+                            }`}
+                          >
+                            <div className="flex items-center gap-1.5 overflow-hidden">
+                              <div className={`w-1 h-1 rounded-full ${
+                                playerTimer 
+                                  ? (playerTimer.type === TimerType.LOST_BALL ? 'bg-red-500' : 'bg-amber-500') 
+                                  : 'bg-zinc-300'
+                              }`}></div>
+                              <span className="truncate">{p}</span>
+                            </div>
+                            {playerTimer && (
+                              <span className={`text-[8px] px-1.5 py-0.2 rounded font-black shrink-0 ${
+                                playerTimer.type === TimerType.LOST_BALL 
+                                  ? 'bg-red-600 text-white' 
+                                  : 'bg-[#FFDD00] text-black font-extrabold'
+                              }`}>
+                                {playerTimer.type === TimerType.LOST_BALL ? 'Lost' : 'Shot'}
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {groupLevelTimers.length > 0 && (
+                      <div className="mb-2 p-1.5 bg-amber-50 border border-amber-200 rounded-sm space-y-0.5 animate-pulse">
+                        <div className="text-[8px] text-zinc-500 font-black uppercase">Active Group Timings</div>
+                        {groupLevelTimers.map((t, idxGl) => (
+                          <div key={idxGl} className="text-[9px] font-bold text-zinc-900 flex justify-between">
+                            <span>{t.type === TimerType.LOST_BALL ? 'Group Lost Ball' : t.type === TimerType.FLAG_IN ? 'Group Flag In' : 'Group Shot Time'}</span>
+                            <span className="text-amber-600 font-black uppercase">{t.type === TimerType.LOST_BALL ? 'L' : t.type === TimerType.FLAG_IN ? 'F' : 'S'}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    <div className="pt-2 border-t border-zinc-100 flex flex-col gap-1">
+                      <div className="text-[9px] text-zinc-400 font-bold uppercase flex items-center justify-between">
+                        <span>Location</span>
+                        <span className="text-zinc-900">Hole {pos.hole}</span>
+                      </div>
+                      <div className="text-[9px] text-zinc-400 font-bold uppercase flex items-center justify-between">
+                        <span>Status</span>
+                        <span className={pos.estimated ? 'text-zinc-500' : 'text-green-600'}>
+                          {pos.estimated ? 'ESTIMATED' : 'CONFIRMED'}
+                        </span>
+                      </div>
                     </div>
                   </div>
-                </div>
-              </Popup>
-            </Marker>
-          ))}
+                </Popup>
+              </Marker>
+            );
+          })}
+
+          {/* Render straight yellow lines from officials to timed groups */}
+          {activeOfficialsLocations.map((off) => {
+            if (!off.activeTimer) return null;
+            const targetGroupNum = String(off.activeTimer.group);
+            const targetGroup = groupPositions.find(p => String(p.groupNumber) === targetGroupNum);
+            if (!targetGroup) return null;
+
+            return (
+              <Polyline
+                key={`line-${off.initials}-${targetGroupNum}`}
+                positions={[[off.lat, off.lng], [targetGroup.lat, targetGroup.lng]]}
+                pathOptions={{
+                  color: '#FFDD00',
+                  weight: 3,
+                  opacity: 0.8,
+                  className: 'pulsing-line'
+                }}
+              />
+            );
+          })}
 
           {/* Render rules officials */}
           {activeOfficialsLocations.map((off, idx) => {
@@ -678,6 +746,24 @@ export default function MapView({ tournamentInfo, records, currentTime, official
           background: #251212;
           border-color: #FFDD00;
         }
+        .pulsing-line {
+          animation: stroke-pulse 1.5s infinite ease-in-out;
+          stroke-dasharray: 6, 6;
+        }
+        @keyframes stroke-pulse {
+          0% {
+            opacity: 0.3;
+            stroke-width: 3;
+          }
+          50% {
+            opacity: 1;
+            stroke-width: 5;
+          }
+          100% {
+            opacity: 0.3;
+            stroke-width: 3;
+          }
+        }
         .group-marker {
           width: 32px;
           height: 32px;
@@ -692,6 +778,10 @@ export default function MapView({ tournamentInfo, records, currentTime, official
           border: 3px solid black;
           box-shadow: 0 4px 12px rgba(0,0,0,0.5);
           transition: all 0.3s;
+        }
+        .group-marker.pulse-timer {
+          animation: pulse-yellow 1.5s infinite;
+          border-color: #FFDD00 !important;
         }
         .group-marker.ontime {
           background: #22C55E;
