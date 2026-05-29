@@ -462,9 +462,14 @@ export default function App() {
     }
 
     try {
+      // Remove any fields that have an undefined value to avoid Firestore client-side validation errors
+      const sanitizedRecord = Object.fromEntries(
+        Object.entries(record).filter(([_, v]) => v !== undefined)
+      );
+
       const recordsRef = collection(db, 'tournaments', tournamentId, 'records');
       await addDoc(recordsRef, {
-        ...record,
+        ...sanitizedRecord,
         officialId: user.uid,
         officialName: user.displayName || user.email || 'Official',
       });
@@ -478,8 +483,14 @@ export default function App() {
     if (officialInitials.toUpperCase() === 'XX') return; // Admin is not an official!
     try {
       const officialRef = doc(db, 'tournaments', tournamentId, 'officials_locations', officialInitials);
+      
+      // Remove any fields that have an undefined value to avoid Firestore errors
+      const sanitizedTimer = timer
+        ? Object.fromEntries(Object.entries(timer).filter(([_, v]) => v !== undefined))
+        : null;
+
       await setDoc(officialRef, {
-        activeTimer: timer || null
+        activeTimer: sanitizedTimer
       }, { merge: true });
     } catch (err) {
       console.error("Error setting active timer:", err);
