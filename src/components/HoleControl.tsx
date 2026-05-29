@@ -73,7 +73,7 @@ export const HoleControl: React.FC<HoleControlProps> = ({
     // After recording, find the next available group to set as active
     // We filter out the current group because the update to 'records' prop 
     // might not have propagated through the parent re-render yet for this immediate calculation
-    const remainingGroups = availableGroups.filter(g => g.group.groupNumber !== groupNumber);
+    const remainingGroups = availableGroups.filter(g => g.group.groupNumber !== groupNumber && !g.hasFinishedHole);
     if (remainingGroups.length > 0) {
       // Try to find the next expected one among remains
       const nowMs = now.getTime();
@@ -92,55 +92,79 @@ export const HoleControl: React.FC<HoleControlProps> = ({
     return name.substring(0, 8);
   };
 
-  // Get groups that haven't finished this hole yet, 
-  // and only show groups that are "behind" (later than) the most recently finished group.
+  // Get groups based on whether they have started play, plus the last two who have finished on this hole,
+  // cap selection at one group after the group that completed the 18th hole.
   const availableGroups = (() => {
     if (!tournamentInfo || !selectedHole) return [];
     
-    // 1. Get all groups that have recorded a Flag In on this hole
-    const finishedRecords = records.filter(r => 
-      r.hole === selectedHole && r.type === TimerType.FLAG_IN
-    );
-    
-    // 2. Find the "latest" finished group based on sequence/time
-    // Since groupNumber is usually sequential for pace, we find the max group number that finished.
-    // However, to be more robust, we look for the latest target time among finished groups.
-    let maxFinishedTime = 0;
-    finishedRecords.forEach(r => {
-      const target = calculateTargetTime(r.group, selectedHole, tournamentInfo, now);
-      if (target.date.getTime() > maxFinishedTime) {
-        maxFinishedTime = target.date.getTime();
+    const groupPaces = tournamentInfo.groups.map((g, idx) => {
+      const [sh, sm] = g.startTime.split(':').map(Number);
+      const startTimeObj = new Date(now);
+      startTimeObj.setHours(sh, sm, 0, 0);
+      const hasStarted = now.getTime() >= startTimeObj.getTime() || 
+                         records.some(r => String(r.group) === String(g.groupNumber));
+
+      const finishedRecord = records.find(r => 
+        String(r.group) === String(g.groupNumber) && 
+        r.hole === selectedHole && 
+        r.type === TimerType.FLAG_IN
+      );
+      const hasFinishedHole = !!finishedRecord;
+
+      return {
+        group: g,
+        pace: calculateTargetTime(g.groupNumber, selectedHole, tournamentInfo, now),
+        hasStarted,
+        hasFinishedHole,
+        idx
+      };
+    });
+
+    let maxCompleted18Index = -1;
+    groupPaces.forEach((item) => {
+      const hasCompleted18 = records.some(r => 
+        String(r.group) === String(item.group.groupNumber) && 
+        r.hole === '18' && 
+        r.type === TimerType.FLAG_IN
+      );
+      if (hasCompleted18) {
+        maxCompleted18Index = Math.max(maxCompleted18Index, item.idx);
       }
     });
 
-    return tournamentInfo.groups
-      .map(g => ({
-        group: g,
-        pace: calculateTargetTime(g.groupNumber, selectedHole, tournamentInfo, now)
-      }))
-      // Filter out:
-      // - Groups that have already recorded a Flag In
-      // - Groups that are "ahead" of someone who has already finished (unless the user wants to see slow/skipped groups - but request says "Only groups behind them")
-      .filter(gPace => {
-        const hasFinished = records.some(r => 
-          r.group === gPace.group.groupNumber && 
+    let cappedPaces = groupPaces;
+    if (maxCompleted18Index !== -1) {
+      cappedPaces = groupPaces.filter(item => item.idx <= maxCompleted18Index + 1);
+    }
+
+    const finishedOnHole = cappedPaces
+      .filter(item => item.hasFinishedHole)
+      .map(item => {
+        const record = records.find(r => 
+          String(r.group) === String(item.group.groupNumber) && 
           r.hole === selectedHole && 
           r.type === TimerType.FLAG_IN
         );
-        if (hasFinished) return false;
-        
-        // Only show if the group's expected finish is strictly after the latest finished group
-        return gPace.pace.date.getTime() >= maxFinishedTime;
+        return { item, timestamp: record ? record.timestamp : 0 };
       })
-      .sort((a, b) => a.pace.date.getTime() - b.pace.date.getTime());
+      .sort((a, b) => b.timestamp - a.timestamp); // newest finished first
+
+    const lastTwoFinishedGroupNumbers = finishedOnHole.slice(0, 2).map(x => x.item.group.groupNumber);
+
+    const finalGroups = cappedPaces.filter(item => {
+      if (lastTwoFinishedGroupNumbers.includes(item.group.groupNumber)) {
+        return true;
+      }
+      return item.hasStarted && !item.hasFinishedHole;
+    });
+
+    return finalGroups.sort((a, b) => a.idx - b.idx);
   })();
 
   const nowMs = now.getTime();
-  const globalNextIdx = availableGroups.findIndex(g => g.pace.date.getTime() >= nowMs);
+  const globalNextIdx = availableGroups.findIndex(g => !g.hasFinishedHole && g.pace.date.getTime() >= nowMs);
   
-  // Pivot the window around the next expected group (showing up to 1 behind and 2 ahead if possible)
-  const pivotPoint = globalNextIdx === -1 ? Math.max(0, availableGroups.length - 3) : Math.max(0, globalNextIdx - 1);
-  const displayGroups = availableGroups.slice(pivotPoint, pivotPoint + 3);
+  const displayGroups = availableGroups;
 
   return (
     <div className="flex flex-col h-full bg-[#111] text-white">
@@ -184,7 +208,8 @@ export const HoleControl: React.FC<HoleControlProps> = ({
           const isNext = globalNextIdx !== -1 && globalIdx === globalNextIdx;
           
           let relationshipLabel = '';
-          if (globalNextIdx === -1) relationshipLabel = 'Overdue';
+          if (gPace.hasFinishedHole) relationshipLabel = 'Hole Completed';
+          else if (globalNextIdx === -1) relationshipLabel = 'Overdue';
           else if (globalIdx < globalNextIdx) relationshipLabel = 'In Front';
           else if (globalIdx === globalNextIdx) relationshipLabel = 'Next Expected';
           else relationshipLabel = 'Following Behind';
@@ -194,10 +219,12 @@ export const HoleControl: React.FC<HoleControlProps> = ({
               key={gPace.group.groupNumber}
               initial={{ opacity: 0, x: -20 }}
               animate={{ opacity: 1, x: 0 }}
-              className={`p-4 rounded-xl border ${
-                isNext 
-                  ? 'bg-zinc-900/50 border-[#FFDD00]/30 shadow-[0_4px_20px_rgba(255,221,0,0.05)]' 
-                  : 'bg-zinc-900/20 border-zinc-800/50'
+              className={`p-4 rounded-xl border transition-all ${
+                gPace.hasFinishedHole
+                  ? 'bg-zinc-900/10 border-zinc-900/40 opacity-60'
+                  : isNext 
+                    ? 'bg-zinc-900/50 border-[#FFDD00]/30 shadow-[0_4px_20px_rgba(255,221,0,0.05)]' 
+                    : 'bg-zinc-900/20 border-zinc-800/50'
               }`}
             >
               <div className="flex items-start justify-between mb-3">
@@ -225,22 +252,39 @@ export const HoleControl: React.FC<HoleControlProps> = ({
 
               <div className="flex items-center justify-between pb-3 border-b border-zinc-800/50 mb-3">
                 <div className="flex items-center gap-2">
-                  <Clock size={14} className={isOverdue ? 'text-red-500' : 'text-green-500'} />
-                  <span className={`text-xs font-black ${isOverdue ? 'text-red-500' : 'text-green-500'}`}>
-                    {Math.abs(diffMinutes)}m {isOverdue ? 'Behind' : 'Away'}
-                  </span>
+                  {gPace.hasFinishedHole ? (
+                    <>
+                      <CheckCircle2 size={14} className="text-green-500" />
+                      <span className="text-xs font-black text-green-500">
+                        Hole Completed
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <Clock size={14} className={isOverdue ? 'text-red-500' : 'text-green-500'} />
+                      <span className={`text-xs font-black ${isOverdue ? 'text-red-500' : 'text-green-500'}`}>
+                        {Math.abs(diffMinutes)}m {isOverdue ? 'Behind' : 'Away'}
+                      </span>
+                    </>
+                  )}
                 </div>
                 <div className="text-[9px] text-zinc-600 font-bold uppercase">
                   {relationshipLabel}
                 </div>
               </div>
 
-              <button
-                onClick={() => handleRecordFlagIn(gPace.group.groupNumber)}
-                className="w-full py-3 bg-[#FFDD00] text-black rounded-lg font-black uppercase text-xs tracking-tighter flex items-center justify-center gap-2 hover:scale-[1.02] transition-transform active:scale-95"
-              >
-                <Flag size={14} /> Record Hole Out
-              </button>
+              {gPace.hasFinishedHole ? (
+                <div className="w-full py-3 bg-zinc-800/30 text-zinc-500 rounded-lg font-black uppercase text-xs tracking-tighter flex items-center justify-center gap-2 border border-zinc-800/50">
+                  <CheckCircle2 size={14} className="text-green-600" /> Completed
+                </div>
+              ) : (
+                <button
+                  onClick={() => handleRecordFlagIn(gPace.group.groupNumber)}
+                  className="w-full py-3 bg-[#FFDD00] text-black rounded-lg font-black uppercase text-xs tracking-tighter flex items-center justify-center gap-2 hover:scale-[1.02] transition-transform active:scale-95"
+                >
+                  <Flag size={14} /> Record Hole Out
+                </button>
+              )}
             </motion.div>
           );
         })}

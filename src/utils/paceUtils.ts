@@ -74,11 +74,25 @@ export const getNextGroupExpected = (
       r.hole === holeNum && 
       r.type === TimerType.FLAG_IN
     );
-    return { group: g, pace, hasFinished };
+
+    // Check if group has started play (scheduled start time is in the past or they have records)
+    const [sh, sm] = g.startTime.split(':').map(Number);
+    const startTimeObj = new Date(baseDate);
+    startTimeObj.setHours(sh, sm, 0, 0);
+    const hasStarted = baseDate.getTime() >= startTimeObj.getTime() || 
+                       recs.some(r => String(r.group) === String(g.groupNumber));
+
+    return { group: g, pace, hasFinished, hasStarted };
   });
 
   // 2. Filter available (unfinished) groups
-  let candidates = groupPaces.filter(item => !item.hasFinished);
+  // We prioritize groups that have already started play
+  let candidates = groupPaces.filter(item => item.hasStarted && !item.hasFinished);
+  
+  // If no started group is unfinished, fall back to any unfinished group (including those yet to start)
+  if (candidates.length === 0) {
+    candidates = groupPaces.filter(item => !item.hasFinished);
+  }
   
   // If all groups have finished, fallback to all groups
   if (candidates.length === 0) {
