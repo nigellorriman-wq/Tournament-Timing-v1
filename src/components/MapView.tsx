@@ -20,6 +20,7 @@ interface MapViewProps {
   records: PlayerShotRecord[];
   currentTime?: Date;
   officialsLocations?: any[];
+  isAdmin?: boolean;
 }
 
 interface HoleLayout {
@@ -37,7 +38,7 @@ interface GroupPosition {
   paceStatus: 'Ahead' | 'On Time' | 'Behind';
 }
 
-export default function MapView({ tournamentInfo, records, currentTime, officialsLocations }: MapViewProps) {
+export default function MapView({ tournamentInfo, records, currentTime, officialsLocations, isAdmin = false }: MapViewProps) {
   const [holeLayouts, setHoleLayouts] = useState<HoleLayout[]>([]);
   const [center, setCenter] = useState<[number, number]>([0, 0]);
   const [zoom, setZoom] = useState(13);
@@ -425,7 +426,7 @@ export default function MapView({ tournamentInfo, records, currentTime, official
 
       <div className="flex-1 relative overflow-hidden flex flex-col md:flex-row">
         {/* Left Table: Next to start */}
-        {nextGroups.length > 0 && (
+        {isAdmin && nextGroups.length > 0 && (
           <div className="absolute left-2 top-2 z-[1000] w-32 bg-black/80 backdrop-blur-md rounded-xl border border-zinc-800 p-2 pointer-events-none sm:pointer-events-auto">
             <div className="text-[10px] font-black uppercase tracking-tighter text-[#FFDD00] mb-2 px-1">Next 10 Starting</div>
             <div className="space-y-1">
@@ -440,7 +441,7 @@ export default function MapView({ tournamentInfo, records, currentTime, official
         )}
 
         {/* Right Table: Last Finished */}
-        {finishedGroups.length > 0 && (
+        {isAdmin && finishedGroups.length > 0 && (
           <div className="absolute right-2 top-2 z-[1000] w-44 bg-black/80 backdrop-blur-md rounded-xl border border-zinc-800 p-2 pointer-events-none sm:pointer-events-auto">
             <div className="text-[10px] font-black uppercase tracking-tighter text-[#FFDD00] mb-2 px-1">Last 10 Finished</div>
             <div className="space-y-1">

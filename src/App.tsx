@@ -852,6 +852,7 @@ export default function App() {
               records={records}
               currentTime={currentTime}
               officialsLocations={officialsLocations}
+              isAdmin={officialInitials === 'XX' || isAdminLoggedIn}
             />
           )}
         </div>
