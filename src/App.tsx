@@ -243,10 +243,15 @@ export default function App() {
 
     const locsRef = collection(db, 'tournaments', tournamentId, 'officials_locations');
     const unsubLocs = onSnapshot(locsRef, (snapshot) => {
-      const locs = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
+      const locs = snapshot.docs
+        .map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }))
+        .filter((off: any) => {
+          const initials = (off.id || off.initials || '').toUpperCase();
+          return initials !== 'XX';
+        });
       setOfficialsLocations(locs);
     }, (error) => {
       console.error("Error loading officials locations:", error);
@@ -259,10 +264,20 @@ export default function App() {
     };
   }, [user, tournamentId]);
 
+  // Purge/delete Admin (XX) location from DB if it exists to keep DB pristine
+  useEffect(() => {
+    if (!tournamentId) return;
+    const adminLocRef = doc(db, 'tournaments', tournamentId, 'officials_locations', 'XX');
+    deleteDoc(adminLocRef).catch(() => {});
+    const adminLocRefLower = doc(db, 'tournaments', tournamentId, 'officials_locations', 'xx');
+    deleteDoc(adminLocRefLower).catch(() => {});
+  }, [tournamentId]);
+
   // Realtime coordinates tracking of the current official (only when NOT in test mode/sandbox time)
   useEffect(() => {
     if (timeOffset !== 0) return; // When in test mode, do not poll referee geolocations
     if (!navigator.geolocation || !tournamentId || !officialInitials) return;
+    if (officialInitials.toUpperCase() === 'XX') return; // Admin is not an official!
 
     const watchId = navigator.geolocation.watchPosition(
       (position) => {
@@ -296,6 +311,7 @@ export default function App() {
   useEffect(() => {
     if (timeOffset !== 0) return; // Sandbox geolocs are handled by other effects below
     if (activeTab !== 'control' || !tournamentId || !officialInitials || !tournament) return;
+    if (officialInitials.toUpperCase() === 'XX') return; // Admin is not an official!
 
     // Check if we have an actual (non-fallback) georeference for the current official
     const refereeLoc = officialsLocations.find(l => 
@@ -334,20 +350,56 @@ export default function App() {
     }
   }, [activeTab, activeHole, tournamentId, officialInitials, tournament, officialsLocations, timeOffset]);
 
-  // In test mode: Place referee behind first tee of Hole 1, until they enter "Ctrl Hole" and select a hole.
+  // In test mode: Place referee randomly out on the course, until they enter "Ctrl Hole" and select a hole.
   // Then, move their indicator to beside that hole on the map (using the green coordinates of the hole).
   useEffect(() => {
     if (timeOffset === 0 || !tournamentId || !officialInitials || !tournament) return;
+    if (officialInitials.toUpperCase() === 'XX') return; // Admin is not an official!
 
     let targetLat: number | null = null;
     let targetLng: number | null = null;
 
     if (!testActiveHoleInControl) {
-      // Place them behind the first tee of Hole 1
-      const coords = getCoordinateFromKml(tournament.kmlData, "1", "behind_tee");
+      // Locate them randomly out on the course deterministically using their initials
+      const sum = (officialInitials || '').split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+      
+      // Extract all valid hole IDs from the KML to make sure we pick one that exists
+      const holeIds: string[] = [];
+      try {
+        const parser = new DOMParser();
+        const kml = parser.parseFromString(tournament.kmlData || '', 'text/xml');
+        const placemarks = kml.getElementsByTagName('Placemark');
+        for (let i = 0; i < placemarks.length; i++) {
+          const name = placemarks[i].getElementsByTagName('name')[0]?.textContent || '';
+          const holeMatch = name.match(/(\d+)/);
+          const holeId = holeMatch ? parseInt(holeMatch[1], 10).toString() : null;
+          if (holeId && !holeIds.includes(holeId)) {
+            holeIds.push(holeId);
+          }
+        }
+      } catch (e) {
+        console.error("Error finding holes from KML for random positioning", e);
+      }
+
+      const resolvedHoles = holeIds.length > 0 ? holeIds : Array.from({ length: 18 }, (_, idx) => String(idx + 1));
+      const holeIndex = sum % resolvedHoles.length;
+      const targetHole = resolvedHoles[holeIndex];
+
+      // Place them beside the green of that targetHole
+      const coords = getCoordinateFromKml(tournament.kmlData, targetHole, "green");
       if (coords) {
-        targetLat = coords.lat;
-        targetLng = coords.lng;
+        // Offset of 15-30 meters (0.00012 to 0.00026 degrees) beside the green so they are "out on the course"
+        const latOffset = (Math.sin(sum) * 1.5 + 1.5) * 0.00012 + 0.00008;
+        const lngOffset = (Math.cos(sum) * 1.5 + 1.5) * 0.00012 + 0.00008;
+        targetLat = coords.lat + (sum % 2 === 0 ? latOffset : -latOffset);
+        targetLng = coords.lng + (sum % 3 === 0 ? lngOffset : -lngOffset);
+      } else {
+        // Fallback to Hole 1 green
+        const fallbackCoords = getCoordinateFromKml(tournament.kmlData, "1", "green");
+        if (fallbackCoords) {
+          targetLat = fallbackCoords.lat;
+          targetLng = fallbackCoords.lng;
+        }
       }
     } else {
       // Move their indicator to beside the selected hole on the map (the green of the hole)
@@ -423,6 +475,7 @@ export default function App() {
 
   const updateActiveTimer = async (timer: any) => {
     if (!user || !tournamentId || !officialInitials) return;
+    if (officialInitials.toUpperCase() === 'XX') return; // Admin is not an official!
     try {
       const officialRef = doc(db, 'tournaments', tournamentId, 'officials_locations', officialInitials);
       await setDoc(officialRef, {

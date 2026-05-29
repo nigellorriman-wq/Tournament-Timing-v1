@@ -62,8 +62,10 @@ export default function LostBallTimer({
   const players = getPlayersByGroup();
 
   useEffect(() => {
-    setSelectedPlayer(null);
-  }, [group]);
+    if (!isActive && timeLeft === 180) {
+      setSelectedPlayer(null);
+    }
+  }, [group, tournamentInfo, isActive, timeLeft]);
 
   const syncWithFirestore = (overrideIsActive?: boolean, overrideTimeLeft?: number, isClearing = false) => {
     if (!updateActiveTimer) return;
@@ -78,7 +80,7 @@ export default function LostBallTimer({
       type: TimerType.LOST_BALL,
       hole,
       group,
-      playerName: selectedPlayer !== null ? players[selectedPlayer] : 'Unknown Player',
+      playerName: selectedPlayer !== null ? players[selectedPlayer] : `Group ${group}`,
       isActive: act,
       timeLeft: tl,
       limit: 180,
@@ -114,6 +116,9 @@ export default function LostBallTimer({
   }, [isActive, timeLeft]);
 
   const captureLocation = () => {
+    const hasSandboxTime = tournamentInfo?.timeOffset !== undefined && tournamentInfo?.timeOffset !== 0;
+    if (hasSandboxTime) return; // Disregard all referee geolocation in sandbox mode
+
     if ('geolocation' in navigator) {
       navigator.geolocation.getCurrentPosition(
         (position) => {
@@ -146,26 +151,36 @@ export default function LostBallTimer({
     }
   };
 
+  const saveSearchRecord = (finalTimeLeft?: number) => {
+    // Capture state values immediately
+    const capturedTime = now.getTime();
+    const capturedHole = hole;
+    const capturedGroup = group;
+    const capturedPlayerName = selectedPlayer !== null ? players[selectedPlayer] : `Group ${capturedGroup}`;
+    const tl = finalTimeLeft !== undefined ? finalTimeLeft : timeLeft;
+    const capturedTimeTaken = 180 - tl;
+    const capturedLat = location?.lat;
+    const capturedLon = location?.lon;
+
+    const record: PlayerShotRecord = {
+      id: Math.random().toString(36).substr(2, 9),
+      type: TimerType.LOST_BALL,
+      timestamp: capturedTime,
+      hole: capturedHole,
+      group: capturedGroup,
+      playerName: capturedPlayerName,
+      timeTaken: capturedTimeTaken,
+      limit: 180,
+      latitude: capturedLat,
+      longitude: capturedLon
+    };
+    onRecordAdded(record);
+  };
+
   const handleStop = () => {
     setIsActive(false);
     saveSearchRecord();
     resetTimer();
-  };
-
-  const saveSearchRecord = () => {
-    const record: PlayerShotRecord = {
-      id: Math.random().toString(36).substr(2, 9),
-      type: TimerType.LOST_BALL,
-      timestamp: now.getTime(),
-      hole,
-      group,
-      playerName: selectedPlayer !== null ? players[selectedPlayer] : 'Unknown Player',
-      timeTaken: 180 - timeLeft,
-      limit: 180,
-      latitude: location?.lat,
-      longitude: location?.lon
-    };
-    onRecordAdded(record);
   };
 
   const formatTime = (seconds: number) => {

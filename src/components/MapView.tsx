@@ -145,22 +145,31 @@ export default function MapView({ tournamentInfo, records, currentTime, official
 
   const activeOfficialsLocations = useMemo(() => {
     const hasSandboxTime = tournamentInfo?.timeOffset !== undefined && tournamentInfo?.timeOffset !== 0;
-    if (hasSandboxTime) {
-      return (officialsLocations || []).map(off => ({
-        ...off,
-        initials: off.initials || off.id || 'RF',
-        timestamp: Date.now() // Bypass the 1-hour expiration filter for sandbox testing
-      }));
-    }
 
+    // Get DB positions, clean them and filter out Admin "XX"
+    const dbOfficials = (officialsLocations || [])
+      .filter(off => {
+        const initials = (off.initials || off.id || '').toUpperCase();
+        return initials !== 'XX' && initials !== '';
+      })
+      .map(off => {
+        const initials = (off.initials || off.id || 'RF').toUpperCase().slice(0, 2);
+        return {
+          ...off,
+          initials,
+          // Bypass 1-hour expiration limit under sandbox/test mode
+          timestamp: hasSandboxTime ? Date.now() : (off.timestamp || Date.now())
+        };
+      });
+
+    // If there are no configured tournament officials, or we have no layout info, just return processed DB officials
     if (!tournamentInfo?.officials || tournamentInfo.officials.length === 0 || holeLayouts.length === 0) {
-      return officialsLocations || [];
+      return dbOfficials;
     }
 
-    const mockOfficials: any[] = [];
+    // Now, let's prepare the deterministic mock positions on the course for configured officials
+    // that don't have a database representation (or whom we want to show anyway)
     const shuffledHoles = [...holeLayouts];
-    
-    // Deterministic seeded shuffle using tournament name
     let seed = 42;
     for (let i = shuffledHoles.length - 1; i > 0; i--) {
       const nameSum = (tournamentInfo.name || '').split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
@@ -172,31 +181,39 @@ export default function MapView({ tournamentInfo, records, currentTime, official
       shuffledHoles[j] = temp;
     }
 
+    const resultOfficials: any[] = [...dbOfficials];
+
     tournamentInfo.officials.forEach((official, idx) => {
-      const layout = shuffledHoles[idx % shuffledHoles.length];
-      if (layout && layout.coordinates.length > 0) {
-        const greenCoord = layout.coordinates[layout.coordinates.length - 1]; // Green is the end of the hole layout
-        
-        // Offset of 15-30 meters (0.00012 to 0.00026 degrees) beside the green
-        const nameSum2 = (official.initials || '').split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) + idx;
-        const latOffset = (Math.sin(nameSum2) * 1.5 + 1.5) * 0.00012 + 0.00008;
-        const lngOffset = (Math.cos(nameSum2) * 1.5 + 1.5) * 0.00012 + 0.00008;
+      const uInitials = official.initials.toUpperCase().slice(0, 2);
+      if (uInitials === 'XX') return; // Do NOT mock Admin (XX)
 
-        const matchingRealLoc = (officialsLocations || []).find(
-          l => l.initials?.toUpperCase() === official.initials?.toUpperCase()
-        );
+      // Check if this official already has a recent location fetched from Firestore (within 1 hour)
+      const alreadyHasRecentDbLoc = dbOfficials.some(
+        off => off.initials === uInitials && (Date.now() - off.timestamp < 3600000)
+      );
 
-        mockOfficials.push({
-          initials: official.initials.toUpperCase().slice(0, 2),
-          lat: greenCoord[0] + (nameSum2 % 2 === 0 ? latOffset : -latOffset),
-          lng: greenCoord[1] + (nameSum2 % 3 === 0 ? lngOffset : -lngOffset),
-          timestamp: Date.now(),
-          activeTimer: matchingRealLoc?.activeTimer || null
-        });
+      if (!alreadyHasRecentDbLoc) {
+        const layout = shuffledHoles[idx % shuffledHoles.length];
+        if (layout && layout.coordinates.length > 0) {
+          const greenCoord = layout.coordinates[layout.coordinates.length - 1]; // Green is the end of the hole layout
+          
+          // Deterministic offset beside the green
+          const nameSum2 = (official.initials || '').split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) + idx;
+          const latOffset = (Math.sin(nameSum2) * 1.5 + 1.5) * 0.00012 + 0.00008;
+          const lngOffset = (Math.cos(nameSum2) * 1.5 + 1.5) * 0.00012 + 0.00008;
+
+          resultOfficials.push({
+            initials: uInitials,
+            lat: greenCoord[0] + (nameSum2 % 2 === 0 ? latOffset : -latOffset),
+            lng: greenCoord[1] + (nameSum2 % 3 === 0 ? lngOffset : -lngOffset),
+            timestamp: Date.now(), // Always recent so it is shown on map
+            activeTimer: null
+          });
+        }
       }
     });
 
-    return mockOfficials;
+    return resultOfficials;
   }, [tournamentInfo, holeLayouts, officialsLocations]);
 
   const groupPositions = useMemo(() => {

@@ -67,11 +67,13 @@ export default function ShotTimer({
   const [timer, setTimer] = useState(0);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Reset selected player when group changes and update names
+  // Reset selected player when group changes and update names (only when timer is idle)
   useEffect(() => {
-    setSelectedPlayer(null);
-    setPlayers(getPlayersByGroup());
-  }, [group, tournamentInfo]);
+    if (status === 'idle') {
+      setSelectedPlayer(null);
+      setPlayers(getPlayersByGroup());
+    }
+  }, [group, tournamentInfo, status]);
 
   useEffect(() => {
     let interval: NodeJS.Timeout;
@@ -109,7 +111,7 @@ export default function ShotTimer({
         type: TimerType.SHOT_TIME,
         hole,
         group,
-        playerName: selectedPlayer !== null ? players[selectedPlayer] : 'Unknown Player',
+        playerName: selectedPlayer !== null ? players[selectedPlayer] : `Group ${group}`,
         isActive: currentStatus === 'running',
         timeTaken: currentTimer,
         limit: isFirstToPlay ? 50 : 40,
@@ -126,7 +128,6 @@ export default function ShotTimer({
   }, [status, hole, group, selectedPlayer, isFirstToPlay]);
 
   const handleStart = () => {
-    if (selectedPlayer === null) return;
     setTimer(0);
     setCountdown(3);
     setStatus('countdown');
@@ -153,34 +154,46 @@ export default function ShotTimer({
 
   const handleStop = () => {
     if (status !== 'running' && status !== 'paused') return;
+
+    // Capture all values at the exact moment of stopping
+    const capturedTime = now.getTime();
+    const capturedHole = hole;
+    const capturedGroup = group;
+    const capturedPlayerName = selectedPlayer !== null ? players[selectedPlayer] : `Group ${capturedGroup}`;
+    const capturedIsFirstToPlay = isFirstToPlay;
+    const capturedTimerVal = timer;
+    const limit = isFirstToPlay ? 50 : 40;
+
     setStatus('finished');
     if (updateActiveTimer) {
       updateActiveTimer(null);
     }
     
     // Get location and save record
-    const limit = isFirstToPlay ? 50 : 40;
-    
     const saveRecord = (lat?: number, lon?: number) => {
       const record: PlayerShotRecord = {
         id: Math.random().toString(36).substr(2, 9),
         type: TimerType.SHOT_TIME,
-        timestamp: now.getTime(),
-        hole,
-        group,
-        playerName: players[selectedPlayer!],
-        isFirstToPlay,
-        timeTaken: timer,
+        timestamp: capturedTime,
+        hole: capturedHole,
+        group: capturedGroup,
+        playerName: capturedPlayerName,
+        isFirstToPlay: capturedIsFirstToPlay,
+        timeTaken: capturedTimerVal,
         limit,
         leeway: limit * 0.1,
-        isSlow: timer > (limit * 1.1),
+        isSlow: capturedTimerVal > (limit * 1.1),
         latitude: lat,
         longitude: lon
       };
       onRecordAdded(record);
     };
 
-    if ('geolocation' in navigator) {
+    const hasSandboxTime = tournamentInfo?.timeOffset !== undefined && tournamentInfo?.timeOffset !== 0;
+
+    if (hasSandboxTime) {
+      saveRecord();
+    } else if ('geolocation' in navigator) {
       navigator.geolocation.getCurrentPosition(
         (position) => {
           saveRecord(position.coords.latitude, position.coords.longitude);
@@ -372,11 +385,9 @@ export default function ShotTimer({
               initial={{ opacity: 0, scale: 0.9 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 1.1 }}
-              disabled={selectedPlayer === null}
+              disabled={false}
               onClick={handleStart}
-              className={`w-48 h-48 rounded-full flex flex-col items-center justify-center gap-2 shadow-2xl transition-all ${
-                selectedPlayer === null ? 'bg-zinc-800 text-gray-600' : 'bg-[#FFDD00] text-black hover:scale-105'
-              }`}
+              className="w-48 h-48 rounded-full flex flex-col items-center justify-center gap-2 shadow-2xl transition-all bg-[#FFDD00] text-black hover:scale-105"
             >
               <Play size={64} fill="black" />
               <span className="font-black uppercase tracking-tighter">Ready</span>
