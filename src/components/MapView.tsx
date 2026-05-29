@@ -256,62 +256,86 @@ export default function MapView({ tournamentInfo, records, currentTime, official
       let lat = 0;
       let lng = 0;
       let estimated = true;
+      let holeProgress = 0;
 
-      if (groupRecords.length > 0 && groupRecords[0].latitude && groupRecords[0].longitude) {
-        currentHole = groupRecords[0].hole;
-        lat = groupRecords[0].latitude;
-        lng = groupRecords[0].longitude;
-        estimated = false;
-      } else {
-        // Estimate based on time
-        if (elapsedMinutes <= 0 && !latestFlagIn) return;
+      const sequence = group.startingTee === 10 
+        ? [10,11,12,13,14,15,16,17,18,1,2,3,4,5,6,7,8,9]
+        : [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18];
 
-        let holeProgress = 0;
-        const sequence = group.startingTee === 10 
-          ? [10,11,12,13,14,15,16,17,18,1,2,3,4,5,6,7,8,9]
-          : [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18];
+      if (latestFlagIn) {
+        const lastKnownIndex = sequence.indexOf(parseInt(latestFlagIn.hole, 10));
+        if (lastKnownIndex !== -1) {
+          // Estimate progression starting from the next hole immediately after latestFlagIn.timestamp.
+          const elapsedNext = (now.getTime() - latestFlagIn.timestamp) / 60000;
 
-        if (latestFlagIn) {
-          const finishedHoleNum = parseInt(latestFlagIn.hole, 10);
-          const finishedHoleIndex = sequence.indexOf(finishedHoleNum);
-          
-          if (finishedHoleIndex !== -1 && finishedHoleIndex + 1 < sequence.length) {
-            currentHole = String(sequence[finishedHoleIndex + 1]);
-            const elapsedMinutesOnCurrentHole = (now.getTime() - latestFlagIn.timestamp) / 60000;
-            const pace = tournamentInfo.paceOfPlay.find(p => p.hole === sequence[finishedHoleIndex + 1]);
-            const holeDuration = pace ? pace.minutes : 15;
-            holeProgress = Math.max(0, Math.min(1, elapsedMinutesOnCurrentHole / holeDuration));
+          if (lastKnownIndex + 1 < sequence.length) {
+            let minsAcc = 0;
+            let prevMinsAcc = 0;
+            let holeDuration = 0;
+            currentHole = String(sequence[lastKnownIndex + 1]);
+            estimated = true;
+
+            for (let idx = lastKnownIndex + 1; idx < sequence.length; idx++) {
+              const hNum = sequence[idx];
+              const p = tournamentInfo.paceOfPlay.find(p => p.hole === hNum);
+              const dur = p ? p.minutes : 15;
+              prevMinsAcc = minsAcc;
+              minsAcc += dur;
+              holeDuration = dur;
+              currentHole = String(hNum);
+              if (elapsedNext < minsAcc) {
+                break;
+              }
+            }
+
+            if (holeDuration > 0) {
+              holeProgress = Math.max(0, Math.min(1, (elapsedNext - prevMinsAcc) / holeDuration));
+            } else {
+              holeProgress = 1;
+            }
           } else {
             currentHole = String(sequence[sequence.length - 1]);
             holeProgress = 1;
+            estimated = true;
           }
         } else {
-          let minsAcc = 0;
-          let prevMinsAcc = 0;
-          let holeDuration = 0;
-          currentHole = String(sequence[0]);
-          
-          for (const holeNum of sequence) {
-            const pace = tournamentInfo.paceOfPlay.find(p => p.hole === holeNum);
-            if (pace) {
-              prevMinsAcc = minsAcc;
-              minsAcc += pace.minutes;
-              holeDuration = pace.minutes;
-              if (elapsedMinutes < minsAcc) {
-                currentHole = String(holeNum);
-                break;
-              }
+          // Fallback if sequence hole not found
+          currentHole = latestFlagIn.hole;
+          estimated = true;
+          holeProgress = 0.5;
+        }
+      } else {
+        // Purely estimated based on time from start
+        if (elapsedMinutes <= 0) return;
+
+        let minsAcc = 0;
+        let prevMinsAcc = 0;
+        let holeDuration = 0;
+        currentHole = String(sequence[0]);
+        estimated = true;
+
+        for (const holeNum of sequence) {
+          const pace = tournamentInfo.paceOfPlay.find(p => p.hole === holeNum);
+          if (pace) {
+            prevMinsAcc = minsAcc;
+            minsAcc += pace.minutes;
+            holeDuration = pace.minutes;
+            if (elapsedMinutes < minsAcc) {
               currentHole = String(holeNum);
+              break;
             }
-          }
-          
-          if (holeDuration > 0) {
-            holeProgress = Math.max(0, Math.min(1, (elapsedMinutes - prevMinsAcc) / holeDuration));
-          } else {
-            holeProgress = 1;
+            currentHole = String(holeNum);
           }
         }
 
+        if (holeDuration > 0) {
+          holeProgress = Math.max(0, Math.min(1, (elapsedMinutes - prevMinsAcc) / holeDuration));
+        } else {
+          holeProgress = 1;
+        }
+      }
+
+      if (estimated || lat === 0) {
         const layout = holeLayouts.find(l => l.hole === currentHole);
         if (layout && layout.coordinates.length > 0) {
           // User suggested that progression to green takes 3/4 of the hole time
