@@ -1,9 +1,96 @@
 import React, { useState } from 'react';
 import Papa from 'papaparse';
-import { Upload, X, Check, FileText, Trophy, Calendar, FileType, Sparkles, Loader2, Map as MapIcon, Clock, User } from 'lucide-react';
+import { Upload, X, Check, FileText, Trophy, Calendar, FileType, Sparkles, Loader2, Map as MapIcon, Clock, User, RotateCcw } from 'lucide-react';
 import { TournamentInfo, HolePace, GroupData, OfficialData } from '../types';
 
+const DEFAULT_PACE_OF_PLAY: HolePace[] = [
+  { hole: 1, minutes: 15 },
+  { hole: 2, minutes: 15 },
+  { hole: 3, minutes: 12 },
+  { hole: 4, minutes: 15 },
+  { hole: 5, minutes: 18 },
+  { hole: 6, minutes: 15 },
+  { hole: 7, minutes: 12 },
+  { hole: 8, minutes: 15 },
+  { hole: 9, minutes: 18 },
+  { hole: 10, minutes: 15 },
+  { hole: 11, minutes: 15 },
+  { hole: 12, minutes: 12 },
+  { hole: 13, minutes: 15 },
+  { hole: 14, minutes: 18 },
+  { hole: 15, minutes: 15 },
+  { hole: 16, minutes: 12 },
+  { hole: 17, minutes: 15 },
+  { hole: 18, minutes: 18 }
+];
 
+const DEFAULT_GROUPS: GroupData[] = [
+  {
+    groupNumber: "1",
+    startTime: "06:30",
+    startingTee: 1,
+    players: ["Tiger Woods", "Rory McIlroy", "Scottie Scheffler"],
+    holeTimes: {
+      "1": "06:45", "2": "07:00", "3": "07:12", "4": "07:27", "5": "07:45",
+      "6": "08:00", "7": "08:12", "8": "08:27", "9": "08:45", "10": "09:00",
+      "11": "09:15", "12": "09:27", "13": "09:42", "14": "10:00", "15": "10:15",
+      "16": "10:27", "17": "10:42", "18": "11:00"
+    }
+  },
+  {
+    groupNumber: "2",
+    startTime: "06:40",
+    startingTee: 1,
+    players: ["Jon Rahm", "Viktor Hovland", "Xander Schauffele"],
+    holeTimes: {
+      "1": "06:55", "2": "07:10", "3": "07:22", "4": "07:37", "5": "07:55",
+      "6": "08:10", "7": "08:22", "8": "08:37", "9": "08:55", "10": "09:10",
+      "11": "09:25", "12": "09:37", "13": "09:52", "14": "10:10", "15": "10:25",
+      "16": "10:37", "17": "10:52", "18": "11:10"
+    }
+  },
+  {
+    groupNumber: "3",
+    startTime: "06:50",
+    startingTee: 1,
+    players: ["Patrick Cantlay", "Wyndham Clark", "Max Homa"],
+    holeTimes: {
+      "1": "07:05", "2": "07:20", "3": "07:32", "4": "07:47", "5": "08:05",
+      "6": "08:20", "7": "08:32", "8": "08:47", "9": "09:05", "10": "09:20",
+      "11": "09:35", "12": "09:47", "13": "10:02", "14": "10:20", "15": "10:35",
+      "16": "10:47", "17": "11:02", "18": "11:20"
+    }
+  },
+  {
+    groupNumber: "4",
+    startTime: "07:00",
+    startingTee: 1,
+    players: ["Matt Fitzpatrick", "Brian Harman", "Ludvig Aberg"],
+    holeTimes: {
+      "1": "07:15", "2": "07:30", "3": "07:42", "4": "07:57", "5": "08:15",
+      "6": "08:30", "7": "08:42", "8": "08:57", "9": "09:15", "10": "09:30",
+      "11": "09:45", "12": "09:57", "13": "10:12", "14": "10:30", "15": "10:45",
+      "16": "10:57", "17": "11:12", "18": "11:30"
+    }
+  },
+  {
+    groupNumber: "5",
+    startTime: "07:10",
+    startingTee: 1,
+    players: ["Jordan Spieth", "Justin Thomas", "Brooks Koepka"],
+    holeTimes: {
+      "1": "07:25", "2": "07:40", "3": "07:52", "4": "08:07", "5": "08:25",
+      "6": "08:40", "7": "08:52", "8": "09:07", "9": "09:25", "10": "09:40",
+      "11": "09:55", "12": "10:07", "13": "10:22", "14": "10:40", "15": "10:55",
+      "16": "11:07", "17": "11:22", "18": "11:40"
+    }
+  }
+];
+
+const DEFAULT_OFFICIALS: OfficialData[] = [
+  { initials: "JD", name: "John Doe" },
+  { initials: "AS", name: "Adam Scott" }
+];
 
 interface TournamentSetupProps {
   onSetupComplete: (data: TournamentInfo) => void;
@@ -22,6 +109,18 @@ export const TournamentSetup: React.FC<TournamentSetupProps> = ({ onSetupComplet
   const [officials, setOfficials] = useState<OfficialData[]>(currentInfo?.officials || []);
   const [newOfficialInitials, setNewOfficialInitials] = useState('');
   const [newOfficialName, setNewOfficialName] = useState('');
+
+  const handleResetToDefaults = () => {
+    if (window.confirm("Are you sure you want to reset all tournament settings to defaults? This will overwrite your current configuration with sample data.")) {
+      setName("Example Tournament");
+      setRound("1");
+      setPaceData(DEFAULT_PACE_OF_PLAY);
+      setGroups(DEFAULT_GROUPS);
+      setKmlData('');
+      setSandboxTime('');
+      setOfficials(DEFAULT_OFFICIALS);
+    }
+  };
 
   const handleAddOfficial = () => {
     const initials = newOfficialInitials.trim().toUpperCase();
@@ -198,11 +297,21 @@ export const TournamentSetup: React.FC<TournamentSetupProps> = ({ onSetupComplet
 
   return (
     <div className="p-4 bg-[#111] text-white flex flex-col h-full overflow-y-auto">
-      <div className="mb-6">
-        <h2 className="text-xl font-bold flex items-center gap-2 text-[#FFDD00]">
-          <Trophy size={20} /> Tournament Setup
-        </h2>
-        <p className="text-white text-xs mt-1">Import pace of play and starting draw records.</p>
+      <div className="mb-6 flex justify-between items-start">
+        <div>
+          <h2 className="text-xl font-bold flex items-center gap-2 text-[#FFDD00]">
+            <Trophy size={20} /> Tournament Setup
+          </h2>
+          <p className="text-white text-xs mt-1">Import pace of play and starting draw records.</p>
+        </div>
+        <button
+          onClick={handleResetToDefaults}
+          className="flex items-center gap-1.5 px-3 py-1.5 bg-red-950/20 hover:bg-red-950/40 border border-red-900/50 text-red-400 hover:text-red-300 rounded text-[10px] font-black uppercase transition-all tracking-wider shrink-0 outline-none select-none"
+          title="Reset to default settings"
+        >
+          <RotateCcw size={12} />
+          Reset
+        </button>
       </div>
 
       <div className="space-y-4">
