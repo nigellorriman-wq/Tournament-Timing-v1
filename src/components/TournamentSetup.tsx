@@ -109,17 +109,17 @@ export const TournamentSetup: React.FC<TournamentSetupProps> = ({ onSetupComplet
   const [officials, setOfficials] = useState<OfficialData[]>(currentInfo?.officials || []);
   const [newOfficialInitials, setNewOfficialInitials] = useState('');
   const [newOfficialName, setNewOfficialName] = useState('');
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
 
-  const handleResetToDefaults = () => {
-    if (window.confirm("Are you sure you want to reset all tournament settings to defaults? This will overwrite your current configuration with sample data.")) {
-      setName("Example Tournament");
-      setRound("1");
-      setPaceData(DEFAULT_PACE_OF_PLAY);
-      setGroups(DEFAULT_GROUPS);
-      setKmlData('');
-      setSandboxTime('');
-      setOfficials(DEFAULT_OFFICIALS);
-    }
+  const handleResetAll = () => {
+    setName('');
+    setRound('');
+    setPaceData([]);
+    setGroups([]);
+    setKmlData('');
+    setSandboxTime('');
+    setOfficials([]);
+    setShowResetConfirm(false);
   };
 
   const handleAddOfficial = () => {
@@ -305,7 +305,7 @@ export const TournamentSetup: React.FC<TournamentSetupProps> = ({ onSetupComplet
           <p className="text-white text-xs mt-1">Import pace of play and starting draw records.</p>
         </div>
         <button
-          onClick={handleResetToDefaults}
+          onClick={() => setShowResetConfirm(true)}
           className="flex items-center gap-1.5 px-3 py-1.5 bg-red-950/20 hover:bg-red-950/40 border border-red-900/50 text-red-400 hover:text-red-300 rounded text-[10px] font-black uppercase transition-all tracking-wider shrink-0 outline-none select-none"
           title="Reset to default settings"
         >
@@ -526,6 +526,36 @@ export const TournamentSetup: React.FC<TournamentSetupProps> = ({ onSetupComplet
            </p>
         )}
       </div>
+
+      {showResetConfirm && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl max-w-sm w-full p-6 shadow-2xl relative animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-center gap-3 text-red-500 mb-4">
+              <div className="p-2 bg-red-500/10 rounded-full">
+                <RotateCcw size={20} />
+              </div>
+              <h3 className="text-lg font-black uppercase tracking-wide">Confirm Reset</h3>
+            </div>
+            <p className="text-sm text-zinc-300 mb-6 leading-relaxed">
+              Are you sure you want to clear all tournament settings? This will completely clear the tournament name, round, player lists, starting draw, pace of play, and rules officials.
+            </p>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => setShowResetConfirm(false)}
+                className="flex-1 py-2.5 bg-zinc-800 hover:bg-zinc-700 transition-colors rounded text-xs font-bold uppercase tracking-wider text-zinc-300 outline-none"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleResetAll}
+                className="flex-1 py-2.5 bg-red-600 hover:bg-red-500 transition-colors rounded text-xs font-bold uppercase tracking-wider text-white outline-none"
+              >
+                Clear All
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
