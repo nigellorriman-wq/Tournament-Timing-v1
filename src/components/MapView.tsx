@@ -44,6 +44,39 @@ export default function MapView({ tournamentInfo, records, currentTime, official
   const [zoom, setZoom] = useState(13);
   const now = currentTime || new Date();
 
+  const hasNoTournamentDetails = !tournamentInfo || !tournamentInfo.name || tournamentInfo.name.trim() === '';
+
+  const onlineReferees = useMemo(() => {
+    return (officialsLocations || [])
+      .filter(off => {
+        const initials = (off.initials || off.id || '').toUpperCase();
+        const lat = Number(off.lat);
+        const lng = Number(off.lng);
+        const hasCoords = !isNaN(lat) && !isNaN(lng) && lat !== 0 && lng !== 0;
+        const isRecent = Date.now() - (off.timestamp || 0) < 3600000;
+        return initials !== 'XX' && initials !== '' && hasCoords && isRecent;
+      })
+      .map(off => {
+        const initials = (off.initials || off.id || 'RF').toUpperCase().slice(0, 2);
+        return {
+          initials,
+          lat: Number(off.lat),
+          lng: Number(off.lng),
+          timestamp: off.timestamp || Date.now(),
+          activeTimer: off.activeTimer || null
+        };
+      });
+  }, [officialsLocations]);
+
+  useEffect(() => {
+    if (hasNoTournamentDetails && onlineReferees.length > 0) {
+      const avgLat = onlineReferees.reduce((sum, r) => sum + r.lat, 0) / onlineReferees.length;
+      const avgLng = onlineReferees.reduce((sum, r) => sum + r.lng, 0) / onlineReferees.length;
+      setCenter([avgLat, avgLng]);
+      setZoom(13);
+    }
+  }, [hasNoTournamentDetails, onlineReferees]);
+
   // Parse KML Data
   useEffect(() => {
     if (!tournamentInfo?.kmlData) return;
@@ -93,7 +126,7 @@ export default function MapView({ tournamentInfo, records, currentTime, official
   const minuteNow = Math.floor(now.getTime() / 60000);
 
   const nextGroups = useMemo(() => {
-    if (!tournamentInfo) return [];
+    if (!tournamentInfo || !tournamentInfo.groups) return [];
     return tournamentInfo.groups
       .filter(g => {
         const [h, m] = g.startTime.split(':').map(Number);
@@ -106,9 +139,9 @@ export default function MapView({ tournamentInfo, records, currentTime, official
   }, [tournamentInfo, minuteNow]);
 
   const finishedGroups = useMemo(() => {
-    if (!tournamentInfo) return [];
+    if (!tournamentInfo || !tournamentInfo.groups) return [];
     
-    const totalPaceMinutes = tournamentInfo.paceOfPlay.reduce((sum, p) => sum + p.minutes, 0);
+    const totalPaceMinutes = (tournamentInfo.paceOfPlay || []).reduce((sum, p) => sum + p.minutes, 0);
     
     const finished = tournamentInfo.groups.map(group => {
       const lastHoleOfSequence = group.startingTee === 10 ? '9' : '18';
@@ -218,10 +251,10 @@ export default function MapView({ tournamentInfo, records, currentTime, official
   }, [tournamentInfo, holeLayouts, officialsLocations]);
 
   const groupPositions = useMemo(() => {
-    if (!tournamentInfo) return [];
+    if (!tournamentInfo || !tournamentInfo.groups) return [];
 
     const positions: GroupPosition[] = [];
-    const totalPaceMinutes = tournamentInfo.paceOfPlay.reduce((sum, p) => sum + p.minutes, 0);
+    const totalPaceMinutes = (tournamentInfo.paceOfPlay || []).reduce((sum, p) => sum + p.minutes, 0);
 
     tournamentInfo.groups.forEach(group => {
       const startTime = new Date(now);
@@ -420,13 +453,16 @@ export default function MapView({ tournamentInfo, records, currentTime, official
     return deconflictedPositions;
   }, [tournamentInfo, records, holeLayouts, minuteNow]);
 
-  if (!tournamentInfo) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[60vh] p-6 text-zinc-500">
-        <Info size={48} className="mb-4 opacity-20" />
-        <p className="text-sm font-bold uppercase tracking-wider">No tournament active</p>
-      </div>
-    );
+  if (hasNoTournamentDetails) {
+    const showAdminMapWithReferees = isAdmin && onlineReferees.length > 0;
+    if (!showAdminMapWithReferees) {
+      return (
+        <div className="flex flex-col items-center justify-center min-h-[60vh] p-6 text-zinc-500 bg-black">
+          <Info size={48} className="mb-4 opacity-20" />
+          <p className="text-sm font-bold uppercase tracking-wider">Tournament not active</p>
+        </div>
+      );
+    }
   }
 
   return (
@@ -730,7 +766,11 @@ export default function MapView({ tournamentInfo, records, currentTime, official
             );
           })}
           
-          <MapController center={center} zoom={zoom} />
+          <MapController 
+            center={center} 
+            zoom={zoom} 
+            fitCoords={hasNoTournamentDetails && onlineReferees.length > 0 ? onlineReferees.map(r => [r.lat, r.lng] as [number, number]) : undefined}
+          />
         </MapContainer>
       </div>
 
@@ -866,13 +906,16 @@ export default function MapView({ tournamentInfo, records, currentTime, official
   );
 }
 
-function MapController({ center, zoom }: { center: [number, number], zoom: number }) {
+function MapController({ center, zoom, fitCoords }: { center: [number, number], zoom: number, fitCoords?: [number, number][] }) {
   const map = useMap();
   useEffect(() => {
-    if (center[0] !== 0) {
+    if (fitCoords && fitCoords.length > 0) {
+      const bounds = L.latLngBounds(fitCoords);
+      map.fitBounds(bounds, { padding: [50, 50] });
+    } else if (center[0] !== 0) {
       map.setView(center, zoom);
     }
-  }, [center, zoom, map]);
+  }, [center, zoom, fitCoords, map]);
   return null;
 }
 

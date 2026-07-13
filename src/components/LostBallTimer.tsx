@@ -31,7 +31,7 @@ export default function LostBallTimer({
 
   // Automatically select the most likely group when the component mounts or hole changes
   useEffect(() => {
-    if (tournamentInfo && tournamentInfo.groups.length > 0) {
+    if (tournamentInfo && tournamentInfo.groups && tournamentInfo.groups.length > 0) {
       // Calculate target times for all groups at this hole
       const groupProximity = tournamentInfo.groups.map(g => {
         const pace = calculateTargetTime(g.groupNumber, hole, tournamentInfo, now);
@@ -52,9 +52,9 @@ export default function LostBallTimer({
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
   const getPlayersByGroup = () => {
-    if (tournamentInfo) {
+    if (tournamentInfo && tournamentInfo.groups) {
       const g = tournamentInfo.groups.find(g => g.groupNumber === group);
-      if (g && g.players.length > 0) return g.players;
+      if (g && g.players && g.players.length > 0) return g.players;
     }
     return ['Player 1', 'Player 2', 'Player 3', 'Player 4'];
   };

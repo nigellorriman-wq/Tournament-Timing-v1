@@ -95,7 +95,7 @@ export const HoleControl: React.FC<HoleControlProps> = ({
   // Get groups based on whether they have started play, plus the last two who have finished on this hole,
   // cap selection at one group after the group that completed the 18th hole.
   const availableGroups = (() => {
-    if (!tournamentInfo || !selectedHole) return [];
+    if (!tournamentInfo || !tournamentInfo.groups || !selectedHole) return [];
     
     const groupPaces = tournamentInfo.groups.map((g, idx) => {
       const [sh, sm] = g.startTime.split(':').map(Number);

@@ -9,7 +9,7 @@ interface HoleTimingsProps {
 
 export const HoleTimings: React.FC<HoleTimingsProps> = ({ records, tournamentInfo }) => {
   const holes = Array.from({ length: 18 }, (_, i) => String(i + 1));
-  const groups = tournamentInfo 
+  const groups = tournamentInfo && tournamentInfo.groups
     ? tournamentInfo.groups.map(g => g.groupNumber)
     : Array.from(new Set(records.map(r => r.group))).sort((a, b) => Number(a) - Number(b));
 

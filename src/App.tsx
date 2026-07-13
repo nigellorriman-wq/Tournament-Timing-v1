@@ -565,6 +565,50 @@ export default function App() {
     }
   };
 
+  const handleTournamentReset = async () => {
+    if (!user) return;
+    
+    const activeId = tournamentId || localStorage.getItem('golf-active-tournament-id');
+    if (activeId) {
+      try {
+        const tourneyRef = doc(db, 'tournaments', activeId);
+        const resetData = {
+          name: '',
+          round: '',
+          paceOfPlay: [],
+          groups: [],
+          kmlData: '',
+          timeOffset: 0,
+          officials: [],
+          createdBy: user.uid,
+          createdAt: new Date().toISOString()
+        };
+        await setDoc(tourneyRef, resetData, { merge: true });
+        setTournament({
+          name: '',
+          round: '',
+          paceOfPlay: [],
+          groups: [],
+          kmlData: '',
+          timeOffset: 0,
+          officials: []
+        });
+      } catch (error) {
+        handleFirestoreError(error, OperationType.WRITE, `tournaments/${activeId}`);
+      }
+    } else {
+      setTournament({
+        name: '',
+        round: '',
+        paceOfPlay: [],
+        groups: [],
+        kmlData: '',
+        timeOffset: 0,
+        officials: []
+      });
+    }
+  };
+
   if (authLoading) {
     return (
       <div className="fixed inset-0 bg-black flex items-center justify-center">
@@ -809,6 +853,7 @@ export default function App() {
               <TournamentSetup 
                 currentInfo={tournament}
                 onSetupComplete={handleTournamentSetup} 
+                onReset={handleTournamentReset}
               />
             )
           )}

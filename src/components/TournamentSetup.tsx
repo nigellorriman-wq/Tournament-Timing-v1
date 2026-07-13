@@ -95,9 +95,10 @@ const DEFAULT_OFFICIALS: OfficialData[] = [
 interface TournamentSetupProps {
   onSetupComplete: (data: TournamentInfo) => void;
   currentInfo?: TournamentInfo;
+  onReset?: () => void;
 }
 
-export const TournamentSetup: React.FC<TournamentSetupProps> = ({ onSetupComplete, currentInfo }) => {
+export const TournamentSetup: React.FC<TournamentSetupProps> = ({ onSetupComplete, currentInfo, onReset }) => {
   const [name, setName] = useState(currentInfo?.name || '');
   const [round, setRound] = useState(currentInfo?.round || '');
   const [paceData, setPaceData] = useState<HolePace[]>(currentInfo?.paceOfPlay || []);
@@ -120,6 +121,9 @@ export const TournamentSetup: React.FC<TournamentSetupProps> = ({ onSetupComplet
     setSandboxTime('');
     setOfficials([]);
     setShowResetConfirm(false);
+    if (onReset) {
+      onReset();
+    }
   };
 
   const handleAddOfficial = () => {
