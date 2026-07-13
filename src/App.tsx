@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Timer, LayoutGrid, History, ShieldAlert, Trophy, BarChart2, Flag, MapPin, LogIn, LogOut, Map as MapIcon, User as UserIcon } from 'lucide-react';
+import { Timer, LayoutGrid, History, ShieldAlert, Trophy, BarChart2, Flag, MapPin, LogIn, LogOut, Map as MapIcon, User as UserIcon, Menu, X } from 'lucide-react';
 import LostBallTimer from './components/LostBallTimer';
 import ShotTimer from './components/ShotTimer';
 import SessionHistory from './components/SessionHistory';
@@ -79,6 +79,7 @@ export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'lost' | 'shot' | 'history' | 'tournament' | 'summary' | 'flag' | 'control' | 'map'>('map');
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [activeHole, setActiveHole] = useState<string>(() => localStorage.getItem('golf-active-hole') || '1');
   const [activeGroup, setActiveGroup] = useState<string>(() => localStorage.getItem('golf-active-group') || '1');
   const [records, setRecords] = useState<PlayerShotRecord[]>([]);
@@ -860,9 +861,65 @@ export default function App() {
 
       {/* Navigation Bar */}
       <nav className="border-t border-zinc-800 bg-zinc-900 bg-opacity-90 backdrop-blur-xl shrink-0">
-        <div className="px-2 py-3 pb-8 grid grid-cols-4 gap-y-5 gap-x-1 sm:flex sm:items-center sm:justify-around sm:gap-6 mx-auto max-w-lg">
+        {/* Mobile Collapsed View */}
+        <div className="sm:hidden flex items-center justify-between px-4 py-2 border-b border-zinc-800/50">
+          {!isMobileMenuOpen ? (
+            <>
+              {/* Active Tab Indicator */}
+              <div className="flex items-center gap-2 text-[#FFDD00]">
+                <div className="p-1 rounded-lg bg-[#FFDD00]/10">
+                  {activeTab === 'map' && <MapIcon size={16} />}
+                  {activeTab === 'tournament' && <Trophy size={16} />}
+                  {activeTab === 'lost' && <Timer size={16} />}
+                  {activeTab === 'shot' && <LayoutGrid size={16} />}
+                  {activeTab === 'flag' && <Flag size={16} />}
+                  {activeTab === 'control' && <MapPin size={16} />}
+                  {activeTab === 'summary' && <BarChart2 size={16} />}
+                  {activeTab === 'history' && <History size={16} />}
+                </div>
+                <span className="text-[10px] font-black uppercase tracking-wider">
+                  {activeTab === 'map' && 'Map View'}
+                  {activeTab === 'tournament' && 'Setup'}
+                  {activeTab === 'lost' && 'Lost Ball'}
+                  {activeTab === 'shot' && 'Shot Clock'}
+                  {activeTab === 'flag' && 'Flag-In'}
+                  {activeTab === 'control' && 'Hole Ctrl'}
+                  {activeTab === 'summary' && 'Timing'}
+                  {activeTab === 'history' && 'History'}
+                </span>
+              </div>
+
+              {/* Hamburger Button */}
+              <button
+                onClick={() => setIsMobileMenuOpen(true)}
+                className="flex items-center gap-1 text-zinc-400 hover:text-white transition-all outline-none py-1 px-2"
+              >
+                <span className="text-[10px] font-black uppercase tracking-wider">Menu</span>
+                <div className="p-1 rounded bg-zinc-800/50">
+                  <Menu size={16} />
+                </div>
+              </button>
+            </>
+          ) : (
+            <>
+              <span className="text-[10px] font-black uppercase tracking-wider text-zinc-400">Navigation</span>
+              <button
+                onClick={() => setIsMobileMenuOpen(false)}
+                className="flex items-center gap-1 text-zinc-400 hover:text-white transition-all outline-none py-1 px-2"
+              >
+                <span className="text-[10px] font-black uppercase tracking-wider">Close</span>
+                <div className="p-1 rounded bg-zinc-800/50">
+                  <X size={16} />
+                </div>
+              </button>
+            </>
+          )}
+        </div>
+
+        {/* Navigation Buttons Grid */}
+        <div className={`${!isMobileMenuOpen ? 'hidden sm:grid' : 'grid'} px-2 py-3 pb-8 grid-cols-4 gap-y-5 gap-x-1 sm:flex sm:items-center sm:justify-around sm:gap-6 mx-auto max-w-lg`}>
           <button 
-            onClick={() => setActiveTab('map')}
+            onClick={() => { setActiveTab('map'); setIsMobileMenuOpen(false); }}
             className={`flex flex-col items-center gap-1.5 transition-all outline-none ${
               activeTab === 'map' ? 'text-[#FFDD00] scale-105' : 'text-zinc-500 hover:text-zinc-300'
             }`}
@@ -874,7 +931,7 @@ export default function App() {
           </button>
           {officialInitials === 'XX' && (
             <button 
-              onClick={() => setActiveTab('tournament')}
+              onClick={() => { setActiveTab('tournament'); setIsMobileMenuOpen(false); }}
               className={`flex flex-col items-center gap-1.5 transition-all outline-none ${
                 activeTab === 'tournament' ? 'text-[#FFDD00] scale-105' : 'text-zinc-500 hover:text-zinc-300'
               }`}
@@ -886,7 +943,7 @@ export default function App() {
             </button>
           )}
           <button 
-            onClick={() => setActiveTab('lost')}
+            onClick={() => { setActiveTab('lost'); setIsMobileMenuOpen(false); }}
             className={`flex flex-col items-center gap-1.5 transition-all outline-none ${
               activeTab === 'lost' ? 'text-[#FFDD00] scale-105' : 'text-zinc-500 hover:text-zinc-300'
             }`}
@@ -897,7 +954,7 @@ export default function App() {
             <span className="text-[9px] font-bold uppercase tracking-wider text-center">Lost Ball</span>
           </button>
           <button 
-            onClick={() => setActiveTab('shot')}
+            onClick={() => { setActiveTab('shot'); setIsMobileMenuOpen(false); }}
             className={`flex flex-col items-center gap-1.5 transition-all outline-none ${
               activeTab === 'shot' ? 'text-[#FFDD00] scale-105' : 'text-zinc-500 hover:text-zinc-300'
             }`}
@@ -908,7 +965,7 @@ export default function App() {
             <span className="text-[9px] font-bold uppercase tracking-wider text-center">Shot Clock</span>
           </button>
           <button 
-            onClick={() => setActiveTab('flag')}
+            onClick={() => { setActiveTab('flag'); setIsMobileMenuOpen(false); }}
             className={`flex flex-col items-center gap-1.5 transition-all outline-none ${
               activeTab === 'flag' ? 'text-[#FFDD00] scale-105' : 'text-zinc-500 hover:text-zinc-300'
             }`}
@@ -919,7 +976,7 @@ export default function App() {
             <span className="text-[9px] font-bold uppercase tracking-wider text-center">Flag-In</span>
           </button>
           <button 
-            onClick={() => setActiveTab('control')}
+            onClick={() => { setActiveTab('control'); setIsMobileMenuOpen(false); }}
             className={`flex flex-col items-center gap-1.5 transition-all outline-none ${
               activeTab === 'control' ? 'text-[#FFDD00] scale-105' : 'text-zinc-500 hover:text-zinc-300'
             }`}
@@ -930,7 +987,7 @@ export default function App() {
             <span className="text-[9px] font-bold uppercase tracking-wider text-center">Hole Ctrl</span>
           </button>
           <button 
-            onClick={() => setActiveTab('summary')}
+            onClick={() => { setActiveTab('summary'); setIsMobileMenuOpen(false); }}
             className={`flex flex-col items-center gap-1.5 transition-all outline-none ${
               activeTab === 'summary' ? 'text-[#FFDD00] scale-105' : 'text-zinc-500 hover:text-zinc-300'
             }`}
@@ -941,7 +998,7 @@ export default function App() {
             <span className="text-[9px] font-bold uppercase tracking-wider text-center">Timing</span>
           </button>
           <button 
-            onClick={() => setActiveTab('history')}
+            onClick={() => { setActiveTab('history'); setIsMobileMenuOpen(false); }}
             className={`flex flex-col items-center gap-1.5 transition-all outline-none ${
               activeTab === 'history' ? 'text-[#FFDD00] scale-105' : 'text-zinc-500 hover:text-zinc-300'
             }`}
