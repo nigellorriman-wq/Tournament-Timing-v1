@@ -44,7 +44,11 @@ export default function MapView({ tournamentInfo, records, currentTime, official
   const [zoom, setZoom] = useState(13);
   const now = currentTime || new Date();
 
-  const hasNoTournamentDetails = !tournamentInfo || !tournamentInfo.name || tournamentInfo.name.trim() === '';
+  const hasNoTournamentDetails = !tournamentInfo || 
+                                 !tournamentInfo.name || 
+                                 tournamentInfo.name.trim() === '' ||
+                                 !tournamentInfo.groups ||
+                                 tournamentInfo.groups.length === 0;
 
   const onlineReferees = useMemo(() => {
     return (officialsLocations || [])
@@ -53,16 +57,48 @@ export default function MapView({ tournamentInfo, records, currentTime, official
         const lat = Number(off.lat);
         const lng = Number(off.lng);
         const hasCoords = !isNaN(lat) && !isNaN(lng) && lat !== 0 && lng !== 0;
-        const isRecent = Date.now() - (off.timestamp || 0) < 3600000;
+        
+        const offTimestamp = (() => {
+          if (!off.timestamp) return 0;
+          if (typeof off.timestamp === 'object') {
+            if ('toMillis' in off.timestamp && typeof off.timestamp.toMillis === 'function') {
+              return off.timestamp.toMillis();
+            }
+            if ('seconds' in off.timestamp) {
+              return Number(off.timestamp.seconds) * 1000;
+            }
+          }
+          const num = Number(off.timestamp);
+          if (!isNaN(num)) return num;
+          const parsed = Date.parse(off.timestamp);
+          return isNaN(parsed) ? 0 : parsed;
+        })();
+
+        const isRecent = Date.now() - offTimestamp < 3600000;
         return initials !== 'XX' && initials !== '' && hasCoords && isRecent;
       })
       .map(off => {
         const initials = (off.initials || off.id || 'RF').toUpperCase().slice(0, 2);
+        const offTimestamp = (() => {
+          if (!off.timestamp) return Date.now();
+          if (typeof off.timestamp === 'object') {
+            if ('toMillis' in off.timestamp && typeof off.timestamp.toMillis === 'function') {
+              return off.timestamp.toMillis();
+            }
+            if ('seconds' in off.timestamp) {
+              return Number(off.timestamp.seconds) * 1000;
+            }
+          }
+          const num = Number(off.timestamp);
+          if (!isNaN(num)) return num;
+          const parsed = Date.parse(off.timestamp);
+          return isNaN(parsed) ? Date.now() : parsed;
+        })();
         return {
           initials,
           lat: Number(off.lat),
           lng: Number(off.lng),
-          timestamp: off.timestamp || Date.now(),
+          timestamp: offTimestamp,
           activeTimer: off.activeTimer || null
         };
       });
