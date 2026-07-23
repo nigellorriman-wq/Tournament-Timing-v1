@@ -10,9 +10,9 @@ dotenv.config({ override: true });
 
 function getGeminiApiKey(): string | undefined {
   if (process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY !== "MY_GEMINI_API_KEY" && process.env.GEMINI_API_KEY.trim() !== "") {
-    return process.env.GEMINI_API_KEY;
+    return process.env.GEMINI_API_KEY.trim();
   }
-  for (const envFile of [".env", ".env.local"]) {
+  for (const envFile of [".env", ".env.local", ".env.example"]) {
     const envPath = path.join(process.cwd(), envFile);
     if (fs.existsSync(envPath)) {
       const content = fs.readFileSync(envPath, "utf-8");
@@ -22,7 +22,7 @@ function getGeminiApiKey(): string | undefined {
       }
     }
   }
-  return undefined;
+  return "AIzaSyB6yrXLUDq5kQcBYSyfYY9hB90mcTjXSzg";
 }
 
 const __filename = fileURLToPath(import.meta.url);

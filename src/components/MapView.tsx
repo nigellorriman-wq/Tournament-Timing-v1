@@ -46,9 +46,7 @@ export default function MapView({ tournamentInfo, records, currentTime, official
 
   const hasNoTournamentDetails = !tournamentInfo || 
                                  !tournamentInfo.name || 
-                                 tournamentInfo.name.trim() === '' ||
-                                 !tournamentInfo.groups ||
-                                 tournamentInfo.groups.length === 0;
+                                 tournamentInfo.name.trim() === '';
 
   const onlineReferees = useMemo(() => {
     return (officialsLocations || [])
@@ -489,16 +487,13 @@ export default function MapView({ tournamentInfo, records, currentTime, official
     return deconflictedPositions;
   }, [tournamentInfo, records, holeLayouts, minuteNow]);
 
-  if (hasNoTournamentDetails) {
-    const showAdminMapWithReferees = isAdmin && onlineReferees.length > 0;
-    if (!showAdminMapWithReferees) {
-      return (
-        <div className="flex flex-col items-center justify-center min-h-[60vh] p-6 text-zinc-500 bg-black">
-          <Info size={48} className="mb-4 opacity-20" />
-          <p className="text-sm font-bold uppercase tracking-wider">Tournament not active</p>
-        </div>
-      );
-    }
+  if (hasNoTournamentDetails && onlineReferees.length === 0 && holeLayouts.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] p-6 text-zinc-500 bg-black">
+        <Info size={48} className="mb-4 opacity-20" />
+        <p className="text-sm font-bold uppercase tracking-wider">Tournament not active</p>
+      </div>
+    );
   }
 
   return (
