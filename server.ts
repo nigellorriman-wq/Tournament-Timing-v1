@@ -1,11 +1,29 @@
 import express from "express";
 import path from "path";
+import fs from "fs";
 import { fileURLToPath } from "url";
 import { createServer as createViteServer } from "vite";
 import dotenv from "dotenv";
 import { GoogleGenAI, Type } from "@google/genai";
 
-dotenv.config();
+dotenv.config({ override: true });
+
+function getGeminiApiKey(): string | undefined {
+  if (process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY !== "MY_GEMINI_API_KEY" && process.env.GEMINI_API_KEY.trim() !== "") {
+    return process.env.GEMINI_API_KEY;
+  }
+  for (const envFile of [".env", ".env.local"]) {
+    const envPath = path.join(process.cwd(), envFile);
+    if (fs.existsSync(envPath)) {
+      const content = fs.readFileSync(envPath, "utf-8");
+      const match = content.match(/GEMINI_API_KEY\s*=\s*["']?([^"'\r\n]+)["']?/);
+      if (match && match[1] && match[1] !== "MY_GEMINI_API_KEY" && match[1].trim() !== "") {
+        return match[1].trim();
+      }
+    }
+  }
+  return undefined;
+}
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -28,7 +46,7 @@ async function startServer() {
       return res.status(400).json({ error: "Missing pdfBase64 parameter" });
     }
 
-    const apiKey = process.env.GEMINI_API_KEY;
+    const apiKey = getGeminiApiKey();
     if (!apiKey) {
       return res.status(500).json({ error: "GEMINI_API_KEY environment variable is not defined on the server" });
     }
