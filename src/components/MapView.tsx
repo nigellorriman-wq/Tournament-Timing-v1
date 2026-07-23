@@ -487,6 +487,32 @@ export default function MapView({ tournamentInfo, records, currentTime, official
     return deconflictedPositions;
   }, [tournamentInfo, records, holeLayouts, minuteNow]);
 
+  const allMapCoords = useMemo(() => {
+    const coords: [number, number][] = [];
+    
+    holeLayouts.forEach(layout => {
+      layout.coordinates.forEach(c => {
+        if (c[0] !== 0 || c[1] !== 0) coords.push(c);
+      });
+    });
+
+    onlineReferees.forEach(r => {
+      if (r.lat !== 0 || r.lng !== 0) coords.push([r.lat, r.lng]);
+    });
+
+    activeOfficialsLocations.forEach(o => {
+      const lat = Number(o.lat);
+      const lng = Number(o.lng);
+      if (!isNaN(lat) && !isNaN(lng) && (lat !== 0 || lng !== 0)) coords.push([lat, lng]);
+    });
+
+    groupPositions.forEach(p => {
+      if (p.lat !== 0 || p.lng !== 0) coords.push([p.lat, p.lng]);
+    });
+
+    return coords;
+  }, [holeLayouts, onlineReferees, activeOfficialsLocations, groupPositions]);
+
   if (hasNoTournamentDetails && onlineReferees.length === 0 && holeLayouts.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] p-6 text-zinc-500 bg-black">
@@ -800,7 +826,7 @@ export default function MapView({ tournamentInfo, records, currentTime, official
           <MapController 
             center={center} 
             zoom={zoom} 
-            fitCoords={hasNoTournamentDetails && onlineReferees.length > 0 ? onlineReferees.map(r => [r.lat, r.lng] as [number, number]) : undefined}
+            fitCoords={allMapCoords.length > 0 ? allMapCoords : undefined}
           />
         </MapContainer>
       </div>
@@ -940,10 +966,13 @@ export default function MapView({ tournamentInfo, records, currentTime, official
 function MapController({ center, zoom, fitCoords }: { center: [number, number], zoom: number, fitCoords?: [number, number][] }) {
   const map = useMap();
   useEffect(() => {
-    if (fitCoords && fitCoords.length > 0) {
-      const bounds = L.latLngBounds(fitCoords);
-      map.fitBounds(bounds, { padding: [50, 50] });
-    } else if (center[0] !== 0) {
+    const validCoords = (fitCoords || []).filter(c => c && !isNaN(c[0]) && !isNaN(c[1]) && (c[0] !== 0 || c[1] !== 0));
+    if (validCoords.length > 0) {
+      const bounds = L.latLngBounds(validCoords);
+      if (bounds.isValid()) {
+        map.fitBounds(bounds, { padding: [50, 50], maxZoom: 16 });
+      }
+    } else if (center[0] !== 0 || center[1] !== 0) {
       map.setView(center, zoom);
     }
   }, [center, zoom, fitCoords, map]);
